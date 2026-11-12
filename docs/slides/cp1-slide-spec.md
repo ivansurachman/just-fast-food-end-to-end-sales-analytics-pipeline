@@ -27,7 +27,7 @@ Assumption: slides are in English like the docs. Say so if you want Indonesian t
 | File (in `docs/`) | Used on slide | Placement | Notes |
 |---|---|---|---|
 | `slides/architecture.png` and `.svg` | 6 | Full width | Source `slides/architecture.dot`, edit and re-render with Graphviz |
-| `er_diagram.png` and `.svg` | 10 | Full width | Source `er_diagram.dot` |
+| `er_diagram.png` and `.svg` | 10 | Full width, or split panel A and B over two slides | Source `er_diagram.dot`, render with `neato -n2` (fixed layout) |
 | `slides/chart_hourly_share.png` | 8 | Left | Regenerate with `slides/make_charts.py` |
 | `slides/chart_channel_mix.png` | 8 | Right top | |
 | `slides/chart_weekday.png` | 8 | Right bottom | |
