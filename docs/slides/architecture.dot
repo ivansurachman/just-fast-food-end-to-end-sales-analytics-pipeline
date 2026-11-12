@@ -1,0 +1,40 @@
+digraph arch {
+  rankdir=LR; compound=true; nodesep=0.5; ranksep=0.7;
+  fontname="Helvetica"; node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7a"];
+  edge [color="#5b6b7a", fontname="Helvetica", fontsize=9, arrowsize=0.7];
+
+  subgraph cluster_podman {
+    label="Podman network (WSL2 backend, total limit 9 GB)"; labeljust=l; style="rounded,dashed"; color="#8896a5"; fontsize=12;
+
+    subgraph cluster_airflow {
+      label="Airflow  (~2.4 GB est.)"; style="rounded,filled"; fillcolor="#fff4e0"; color="#f0a030";
+      gen [label="DAG simulate_source\nseeded Python generator", fillcolor="#ffe3b3"];
+      ing [label="DAG ingest_and_transform (daily, backfill)\n1 wait for manifest\n2 CSV to Parquet (bronze)\n3 dbt + DuckDB (silver, gold)\n4 dbt tests and DQ checks\n5 load marts", fillcolor="#ffe3b3"];
+    }
+
+    subgraph cluster_s3 {
+      label="SeaweedFS S3  (~0.5 GB est.)"; style="rounded,filled"; fillcolor="#e8f1fb"; color="#5b9bd5";
+      raw [label="raw CSV\norders, order_items,\norder_changes (dt=...)\n+ manifest", fillcolor="#cfe2f7"];
+      lake [label="Parquet lake\nbronze, silver, gold\npartition: order_date", fillcolor="#cfe2f7"];
+    }
+
+    subgraph cluster_pg {
+      label="PostgreSQL  (~0.45 GB est.)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
+      marts [label="database analytics\ngold marts", fillcolor="#d3ecd3"];
+      meta [label="Airflow and\nSuperset metadata", fillcolor="#d3ecd3"];
+    }
+
+    subgraph cluster_ss {
+      label="Superset  (~1.35 GB est.)"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
+      dash [label="Dashboard\n6 pages, 18 metrics", fillcolor="#e3cdf3"];
+    }
+  }
+
+  gen -> raw [label=" daily CSV"];
+  raw -> ing [label=" read"];
+  ing -> lake [label=" write Parquet"];
+  lake -> ing [label=" DuckDB reads", style=dashed];
+  ing -> marts [label=" load"];
+  marts -> dash [label=" query"];
+  meta -> ing [style=dotted, arrowhead=none];
+}
