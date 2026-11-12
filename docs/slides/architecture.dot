@@ -21,11 +21,11 @@ digraph arch {
     subgraph cluster_pg {
       label="PostgreSQL  (~0.45 GB est.)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
       marts [label="database analytics\ngold marts", fillcolor="#d3ecd3"];
-      meta [label="Airflow and\nSuperset metadata", fillcolor="#d3ecd3"];
+      meta [label="Airflow and\nMetabase metadata", fillcolor="#d3ecd3"];
     }
 
     subgraph cluster_ss {
-      label="Superset  (~1.35 GB est.)"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
+      label="Metabase  (~1.0 GB est.)"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
       dash [label="Dashboard\n6 pages, 18 metrics", fillcolor="#e3cdf3"];
     }
   }

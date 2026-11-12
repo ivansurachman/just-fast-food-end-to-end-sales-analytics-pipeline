@@ -12,7 +12,7 @@ Status: design for Mentoring 1. Layer details are provisional until the Phase 3 
 | bronze | Raw rows plus `source_file_date`, no cleaning | Parquet |
 | silver | Deduplicated, standardized, timestamps converted, `order_changes` applied, defects quarantined | Parquet partitioned by `order_date` |
 | gold | Star schema below | DuckDB / Parquet |
-| marts | Small aggregates for the dashboard | PostgreSQL database `analytics`, read by Superset |
+| marts | Small aggregates for the dashboard | PostgreSQL database `analytics`, read by Metabase |
 
 Refunds and cancellations are attributed to the order date. A refund therefore rewrites the `order_date` partition of its order, up to 8 days back. Late-arriving orders (file date later than order date) land in their own order-date partition.
 
