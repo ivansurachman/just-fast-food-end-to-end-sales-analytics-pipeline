@@ -1,50 +1,50 @@
-# Check Point 1 slide spec
+# Spesifikasi slide Check Point 1
 
-For the Check Point 1 presentation (PPT due 14 Nov, presented 15 Nov). It follows the three parts of the bootcamp template: Introduction, Overview Project, Main Project. Text is a ready-to-paste draft; design and layout are yours. Numbers come from `docs/data-profile.md` (45 days, scale 0.1, seed 42) unless stated.
+Untuk presentasi Check Point 1 (PPT dikumpulkan 14 Nov, dipresentasikan 15 Nov). Struktur mengikuti tiga bagian template bootcamp: Introduction, Overview Project, Main Project. Teks di bawah adalah draf siap tempel. Desain dan tata letak sepenuhnya milikmu. Angka berasal dari `docs/data-profile.md` (45 hari, skala 0,1, seed 42) kecuali disebut lain.
 
-Assumption: slides are in English like the docs. Say so if you want Indonesian text.
+Dokumen ini sengaja berbahasa Indonesia karena isi slide akan dibawakan dalam bahasa Indonesia. Dokumen lain di repo tetap berbahasa Inggris.
 
-## Slide by slide
+## Slide per slide
 
-| # | Slide | Must contain | Visual and placement | Status |
+| # | Slide | Harus berisi | Visual dan penempatan | Status |
 |---|---|---|---|---|
-| 1 | Title | Project name "Just Fast Food: end-to-end sales analytics", your name, bootcamp, Check Point 1, date | None | Needs your name and date |
-| 2 | Introduction | Self-overview, education (degree, institution, concentration), working experience (roles, projects, achievements) | Optional photo, left | Needs your input |
-| 3 | Overview Project | One row per bootcamp project: title, short description (goal, analysis, result, technology). Add this project as the last row | Table, full width | Needs the list of your other projects |
-| 4 | Project background | Fictional fast food chain, 100+ branches across Indonesia, about 120 thousand orders per day, five sales channels. Reports are split by channel and arrive late, duplicated or dirty. Goal: one trusted sales view and a reproducible pipeline. Beneficiaries: operations, regional managers, marketing, finance | None, or a small channel icon row | Text ready |
-| 5 | Problem statement and success | Problems: (1) net sales by channel after platform commission is unknown, (2) peak hours per branch are not visible, (3) promo cost versus effect is unclear, (4) late and dirty data make daily numbers unreliable. Success metrics: all 11 P1 metrics answerable, daily run succeeds end to end, every injected defect detected (9 of 9 today) | Right: table of the 11 P1 metrics (M1, M2, M3, M4, M6, M7, M8, M10, M12, M15, M17) | Targets below need your approval |
-| 6 | Data platform understanding | Source to storage to transform to serving, in one sentence each. All services run in Podman containers under a 9 GB memory limit | **Full width: `architecture.png`** | Design v1, final after Phase 3 |
-| 7 | Data understanding: source and structure | Collection: seeded Python generator, daily CSV to S3-compatible storage. Entities and grain: orders (one row per order), order_items (one per line), order_changes (one per refund), 4 dimension tables. Volume: full scale about 120 thousand orders and 290 thousand lines per day, about 44 million orders per year. Dev window: 541 thousand orders, 1.3 million lines, 109 MB | Left: entity table. Right: screenshot of the head of `orders.csv` (you capture) | Text ready, screenshot needed |
-| 8 | Data understanding: patterns | Peaks at lunch and dinner, online skews to evening, weekend uplift, online is half of orders but a smaller share of net sales | **Left: `chart_hourly_share.png`. Right top: `chart_channel_mix.png`. Right bottom: `chart_weekday.png`** (or one chart per slide) | Ready |
-| 9 | Data understanding: quality | Nine production-style defects are injected: duplicate rows, late-arriving orders, missing branch-days, empty or inconsistent payment labels, total not equal to item sum, unknown menu item, empty platform reference. The data profile finds every one, and the counts match the generator manifest | Table: defect, detected, injected (copy from section 7 of `data-profile.md`) | Ready |
-| 10 | Data modeling | Star schema: two fact tables (order, order line), a branch-day coverage fact, a data-quality fact, five dimensions. Partitioned by order date. Refunds are attributed to the order date, so a refund rewrites that order's partition | **Full width: `er_diagram.png`** (from `docs/er_diagram.dot`) | Ready |
-| 11 | Transformation and considerations | Why batch: about 4 to 5 orders per second at peak, daily reporting, refunds arrive up to 8 days later. Engine choice: DuckDB + dbt fits the 9 GB budget (Trino was estimated at about 2.6 GB alone). Layers: raw CSV, bronze Parquet, silver cleaned, gold star schema, marts in PostgreSQL | Left: decision table (option, RAM, verdict). Right: layer strip | Text ready, strip is yours to draw |
-| 12 | Plan and risks | Timeline to 22 Nov (pipeline end to end) and 29 Nov (review). Risks: 9 GB limit on Podman and WSL2, S3 integration untested, Windows setup untested | Simple timeline bar plus a three-row risk table | Text ready |
-| 13 | Done so far and next | Done: generator with 37 tests, seeded and reproducible, repo with commit history, data model, data profile. Next: infrastructure, DAGs, dbt models, dashboard | Three small screenshots (you capture): `git log --oneline`, `pytest` summary, `jff-gen generate` run | Screenshots needed |
+| 1 | Judul | Nama proyek "Just Fast Food: analitik penjualan end-to-end", namamu, bootcamp, Check Point 1, tanggal | Tidak ada | Butuh namamu dan tanggal |
+| 2 | Introduction | Profil diri, pendidikan (gelar, institusi, konsentrasi), pengalaman kerja (peran, proyek, pencapaian) | Foto opsional di kiri | Butuh input darimu |
+| 3 | Overview Project | Satu baris per proyek bootcamp: judul, deskripsi singkat (tujuan, analisis, hasil, teknologi). Proyek ini jadi baris terakhir | Tabel selebar slide | Butuh daftar proyek bootcamp lainnya |
+| 4 | Latar belakang proyek | Jaringan makanan cepat saji fiktif, 100+ cabang di seluruh Indonesia, sekitar 120 ribu order per hari, lima channel penjualan. Laporan terpecah per channel dan datang terlambat, duplikat, atau kotor. Tujuan: satu tampilan penjualan yang bisa dipercaya dan pipeline yang bisa diulang. Penerima manfaat: operasional, manajer wilayah, marketing, keuangan | Tidak ada, atau deretan ikon channel kecil | Teks siap |
+| 5 | Problem statement dan ukuran sukses | Masalah: (1) penjualan bersih per channel setelah komisi platform belum diketahui, (2) jam sibuk per cabang tidak terlihat, (3) biaya promo dibanding efeknya tidak jelas, (4) data yang terlambat dan kotor membuat angka harian tidak bisa dipercaya. Ukuran sukses: 11 metrik P1 terjawab, pipeline harian berjalan sukses end to end, setiap cacat yang disuntikkan terdeteksi (9 dari 9 saat ini) | Kanan: tabel 11 metrik P1 (M1, M2, M3, M4, M6, M7, M8, M10, M12, M15, M17) | Target di bawah perlu persetujuanmu |
+| 6 | Data platform understanding | Sumber, penyimpanan, transformasi, dan penyajian, masing-masing satu kalimat. Semua layanan jalan di container Podman dengan batas memori 9 GB. Dashboard memakai Metabase | **Selebar slide: `architecture.png`** | Desain v1, final setelah Phase 3 |
+| 7 | Data understanding: sumber dan struktur | Pengumpulan: generator Python ber-seed, CSV harian ke penyimpanan kompatibel S3. Entitas dan grain: orders (satu baris per order), order_items (satu per baris item), order_changes (satu per refund), 4 tabel dimensi. Volume: skala penuh sekitar 120 ribu order dan 290 ribu baris item per hari, sekitar 44 juta order per tahun. Jendela development: 541 ribu order, 1,3 juta baris item, 109 MB | Kiri: tabel entitas. Kanan: screenshot isi awal `orders.csv` (kamu ambil sendiri) | Teks siap, screenshot dibutuhkan |
+| 8 | Data understanding: pola data | Puncak di jam makan siang dan makan malam, order online condong ke malam, kenaikan di akhir pekan, online setengah dari jumlah order tetapi porsinya lebih kecil dari penjualan bersih | **Kiri: `chart_hourly_share.png`. Kanan atas: `chart_channel_mix.png`. Kanan bawah: `chart_weekday.png`** (atau satu grafik per slide) | Siap |
+| 9 | Data understanding: kualitas data | Sembilan cacat ala produksi disuntikkan: baris duplikat, order terlambat, cabang-hari hilang, label pembayaran kosong atau tidak konsisten, total tidak sama dengan jumlah item, menu tidak dikenal, referensi platform kosong. Profil data menemukan semuanya, dan jumlahnya sama dengan manifest generator | Tabel: cacat, terdeteksi, disuntikkan (salin dari bagian 7 `data-profile.md`) | Siap |
+| 10 | Data modeling | Star schema: dua tabel fakta (order, baris order), satu fakta cakupan cabang-hari, satu fakta kualitas data, lima dimensi. Dipartisi per tanggal order. Refund diatribusikan ke tanggal order, jadi satu refund menulis ulang partisi order tersebut | **Selebar slide: `er_diagram.png`**, atau pecah panel A dan B ke dua slide | Siap |
+| 11 | Transformasi dan pertimbangan | Kenapa batch: sekitar 4 sampai 5 order per detik saat puncak, pelaporan harian, refund bisa datang sampai 8 hari kemudian. Pilihan engine: DuckDB + dbt muat di budget 9 GB (Trino saja diperkirakan sekitar 2,6 GB). Lapisan: CSV mentah, bronze Parquet, silver bersih, gold star schema, mart di PostgreSQL | Kiri: tabel keputusan (opsi, RAM, putusan). Kanan: strip lapisan | Teks siap, strip kamu gambar sendiri |
+| 12 | Rencana dan risiko | Garis waktu ke 22 Nov (pipeline end to end) dan 29 Nov (review). Risiko: batas 9 GB di Podman dan WSL2, integrasi S3 belum teruji, setup Windows belum teruji | Bilah garis waktu sederhana dan tabel risiko tiga baris | Teks siap |
+| 13 | Yang sudah selesai dan berikutnya | Selesai: generator dengan 39 tes, ber-seed dan dapat direproduksi, repo dengan riwayat commit, data model, data dictionary, profil data. Berikutnya: infrastruktur, DAG, model dbt, dashboard | Tiga screenshot kecil (kamu ambil sendiri): `git log --oneline`, ringkasan `pytest`, hasil menjalankan `jff-gen generate` | Screenshot dibutuhkan |
 
-## Image inventory
+## Daftar gambar
 
-| File (in `docs/`) | Used on slide | Placement | Notes |
+| File (di `docs/`) | Dipakai di slide | Penempatan | Catatan |
 |---|---|---|---|
-| `slides/architecture.png` and `.svg` | 6 | Full width | Source `slides/architecture.dot`, edit and re-render with Graphviz |
-| `er_diagram.png` and `.svg` | 10 | Full width, or split panel A and B over two slides | Source `er_diagram.dot`, render with `neato -n2` (fixed layout) |
-| `slides/chart_hourly_share.png` | 8 | Left | Regenerate with `slides/make_charts.py` |
-| `slides/chart_channel_mix.png` | 8 | Right top | |
-| `slides/chart_weekday.png` | 8 | Right bottom | |
+| `slides/architecture.png` dan `.svg` | 6 | Selebar slide | Sumber `slides/architecture.dot`, ubah lalu render ulang dengan Graphviz |
+| `er_diagram.png` dan `.svg` | 10 | Selebar slide, atau panel A dan B di dua slide | Sumber `er_diagram.dot`, render dengan `neato -n2` (tata letak tetap) |
+| `slides/chart_hourly_share.png` | 8 | Kiri | Buat ulang dengan `slides/make_charts.py` |
+| `slides/chart_channel_mix.png` | 8 | Kanan atas | |
+| `slides/chart_weekday.png` | 8 | Kanan bawah | |
 
-SVG files can be recolored in PowerPoint to match your design.
+File SVG bisa diwarnai ulang di PowerPoint agar cocok dengan desainmu.
 
-## Still needed from you
+## Yang masih kamu perlu siapkan
 
-1. The slide template file, if the bootcamp requires it.
-2. Your name, education and working experience (slide 2).
-3. The list of your other bootcamp projects with a one-line description each (slide 3).
-4. Screenshots from your machine: head of `orders.csv`, `git log --oneline`, the `pytest` summary, a `jff-gen generate` run (slides 7 and 13).
-5. Confirmation which template sections Check Point 1 requires. Slides 11 and 12 go beyond the Design stage, so drop them if the mentor only wants dataset, diagram, data model and repo.
-6. Approval of these proposed success targets for slide 5: daily pipeline run succeeds at least 95% of days in the test window, yesterday's data is available on the dashboard by a fixed morning time, defect detection stays at 9 of 9.
+1. File template slide, kalau bootcamp mewajibkannya.
+2. Namamu, pendidikan, dan pengalaman kerja (slide 2).
+3. Daftar proyek bootcamp lainnya dengan deskripsi satu baris masing-masing (slide 3).
+4. Screenshot dari mesinmu: isi awal `orders.csv`, `git log --oneline`, ringkasan `pytest`, dan hasil menjalankan `jff-gen generate` (slide 7 dan 13).
+5. Konfirmasi bagian template mana yang diwajibkan di Check Point 1. Slide 11 dan 12 melewati tahap Design, jadi buang kalau mentor hanya meminta dataset, diagram, data model, dan repo.
+6. Persetujuan atas usulan target sukses untuk slide 5: pipeline harian berhasil minimal 95% hari pada jendela pengujian, data kemarin tersedia di dashboard pada jam pagi yang ditetapkan, dan deteksi cacat tetap 9 dari 9.
 
-## Caveats to state honestly on the slides
+## Catatan yang sebaiknya jujur dinyatakan di slide
 
-- The architecture is design v1. It has not been run yet, and RAM figures are estimates.
-- Running the generator as an Airflow DAG is a proposal, not yet confirmed.
-- All data is synthetic, so insights reflect the generator's assumptions, not real customers.
+- Arsitektur masih desain v1. Belum pernah dijalankan, dan angka RAM adalah estimasi.
+- Menjalankan generator sebagai DAG Airflow masih usulan, belum dikonfirmasi.
+- Semua data sintetis, jadi insight mencerminkan asumsi generator, bukan pelanggan nyata.
