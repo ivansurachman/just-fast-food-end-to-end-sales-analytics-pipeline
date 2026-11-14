@@ -21,6 +21,39 @@ Dokumen ini sengaja berbahasa Indonesia karena isi slide akan dibawakan dalam ba
 | 11 | Transformasi dan pertimbangan | Kenapa batch: sekitar 4 sampai 5 order per detik saat puncak, pelaporan harian, refund bisa datang sampai 8 hari kemudian. Pilihan engine: DuckDB + dbt muat di budget 9 GB (Trino saja diperkirakan sekitar 2,6 GB). Lapisan: CSV mentah, bronze Parquet, silver bersih, gold star schema, mart di PostgreSQL | Kiri: tabel keputusan (opsi, RAM, putusan). Kanan: strip lapisan | Teks siap, strip kamu gambar sendiri |
 | 12 | Rencana dan risiko | Garis waktu ke 22 Nov (pipeline end to end) dan 29 Nov (review). Risiko: batas 9 GB di Podman dan WSL2, integrasi S3 belum teruji, setup Windows belum teruji | Bilah garis waktu sederhana dan tabel risiko tiga baris | Teks siap |
 | 13 | Yang sudah selesai dan berikutnya | Selesai: generator dengan 39 tes, ber-seed dan dapat direproduksi, repo dengan riwayat commit, data model, data dictionary, profil data. Berikutnya: infrastruktur, DAG, model dbt, dashboard | Tiga screenshot kecil (kamu ambil sendiri): `git log --oneline`, ringkasan `pytest`, hasil menjalankan `jff-gen generate` | Screenshot dibutuhkan |
+| 14 | Conclusion & Recommendation | Lihat bagian "Isi slide 14" di bawah. Kesimpulan di tahap desain memisahkan hasil yang sudah terbukti dari yang masih rancangan | Teks saja, atau tiga kolom: kesimpulan, keterbatasan, rekomendasi | Teks siap, versi final menunggu hasil Phase 3 |
+
+## Isi slide 14: Conclusion & Recommendation
+
+Instruksi template: menyimpulkan bahwa platform mampu mengolah dan menyajikan data, serta menjelaskan keterbatasan platform. Pada Check Point 1 pipeline dan dashboard belum dibangun, jadi kesimpulan tidak boleh menyatakan platform sudah mampu. Teks di bawah memisahkan yang terbukti dari yang masih rancangan.
+
+**Kesimpulan**
+
+- Lapisan data sudah terbukti. Generator menghasilkan 541 ribu order dan 1,3 juta baris item (109 MB) untuk 45 hari, hasilnya identik setiap dijalankan ulang dengan seed yang sama, dan lolos 39 tes otomatis.
+- Kualitas data terukur. Sembilan jenis cacat ala produksi disuntikkan dan semuanya terdeteksi, dengan jumlah yang sama persis dengan catatan generator.
+- Rancangan platform memenuhi kebutuhan 18 metrik: setiap metrik punya sumber di model gold (diperiksa lewat desain, belum dijalankan sebagai query).
+- Pengolahan dan penyajian end to end belum dibuktikan. Targetnya dibuktikan pada Mentoring 2 (22 Nov).
+
+**Keterbatasan platform** (V = sudah terukur, E = estimasi, R = rancangan belum diuji)
+
+- Berjalan di satu mesin dengan budget RAM 9 GB. Estimasi tipikal stack sekitar 4,4 GB (E).
+- Hanya batch, tanpa real-time. Refund bisa datang sampai 8 hari kemudian, jadi tiap run memproses ulang partisi 8 sampai 9 hari terakhir (R).
+- DuckDB hanya satu penulis. Mart disajikan lewat PostgreSQL, sehingga Metabase tidak bisa menelusuri sampai level order (R).
+- Dashboard Metabase edisi gratis sulit disimpan sebagai kode. Bukti dashboard berupa SQL kartu dan ekspor JSON (R).
+- Data sintetis, jadi insight mencerminkan asumsi generator. Rate komisi platform adalah placeholder (V).
+- Cabang statis, tanpa penutupan atau pembukaan di tengah jendela data. Voucher TikTok dan dimensi pelanggan tidak termasuk (V).
+- Integrasi SeaweedFS, setup Podman di Windows Home, dan reproduksibilitas lintas OS belum teruji (R).
+
+**Rekomendasi**
+
+1. Setujui desain pipeline (Airflow, DuckDB + dbt, PostgreSQL, Metabase), lalu buktikan end to end lebih dulu dengan data satu hari.
+2. Ukur setelah Phase 3: waktu run per hari, puncak RAM per container, dan baris yang diproses. Ganti semua angka estimasi dengan angka terukur.
+3. Uji skala penuh (sekitar 120 ribu order per hari) setelah jendela development lulus, untuk memastikan batas 9 GB cukup.
+4. Daftar "later", dikerjakan hanya kalau waktu tersisa: Iceberg, ClickHouse, monitoring, sumber settlement platform, cabang dinamis, voucher TikTok.
+
+**Catatan penyampaian:** sebut jelas bahwa ini kesimpulan tahap desain. Versi 29 Nov mengganti baris "belum dibuktikan" dengan hasil ukur dan angka nyata di keterbatasan.
+
+**Angka yang diisi setelah Phase 3:** waktu run per hari, puncak RAM per container, jumlah baris yang diproses, hasil `dbt test`, dan waktu muat dashboard.
 
 ## Daftar gambar
 
