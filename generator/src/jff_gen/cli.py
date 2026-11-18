@@ -11,7 +11,7 @@ from .context import build_context
 from .daily import generate_range, write_dimensions
 from .dimensions import DIMENSION_BUILDERS
 from .profiling import build_profile
-from .sinks import Sink
+from .sinks import Sink, s3_storage_options
 
 
 def _parse_date(text: str) -> date:
@@ -28,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--out", required=True, help="local path or fsspec URL, e.g. s3://bucket/raw"
+    )
+    common.add_argument(
+        "--s3-endpoint",
+        help="endpoint URL of an S3-compatible server, e.g. http://localhost:8333 "
+        "(credentials come from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)",
     )
     common.add_argument("--config", type=Path, help="YAML config replacing the packaged default")
     common.add_argument("--seed", type=int)
@@ -99,7 +104,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         details = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
         parser.error(f"invalid settings: {details}")
     ctx = build_context(cfg)
-    sink = Sink(args.out)
+    if args.s3_endpoint and not args.out.startswith("s3://"):
+        parser.error("--s3-endpoint needs an s3:// URL for --out")
+    options = s3_storage_options(args.s3_endpoint) if args.s3_endpoint else None
+    sink = Sink(args.out, options)
     if args.command == "dim":
         write_dimensions(ctx, sink, None if args.table == "all" else args.table)
         return 0

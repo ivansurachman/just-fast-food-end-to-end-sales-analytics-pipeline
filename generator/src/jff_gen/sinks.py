@@ -10,6 +10,19 @@ import pandas as pd
 from .schema import DAILY_ENTITIES
 
 
+def s3_storage_options(endpoint_url: str) -> dict[str, Any]:
+    """fsspec options for an S3-compatible server such as SeaweedFS.
+
+    Credentials are not handled here: s3fs reads AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+    from the environment. Path-style addressing is required because the endpoint is a bare
+    host name that cannot serve bucket sub-domains.
+    """
+    return {
+        "client_kwargs": {"endpoint_url": endpoint_url},
+        "config_kwargs": {"s3": {"addressing_style": "path"}},
+    }
+
+
 class DayWriter:
     """Appends chunks of one day's CSV files; headers are written once when the day opens."""
 

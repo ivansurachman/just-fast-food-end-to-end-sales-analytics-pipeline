@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 s3 = ["s3fs"]
+s3test = ["s3fs", "moto[server]"]
 dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "types-PyYAML", "pandas-stubs"]
 
 [project.scripts]

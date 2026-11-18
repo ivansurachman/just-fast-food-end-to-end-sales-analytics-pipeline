@@ -38,6 +38,7 @@ Writes dimension tables to `<out>/dimensions/<table>.csv`. Each table has its ow
 |---|---|
 | `table` (required) | `branches`, `menu_items`, `promos`, `channels`, or `all` |
 | `--out` (required) | Local folder or an fsspec URL such as `s3://bucket/raw` |
+| `--s3-endpoint` | Endpoint URL of an S3-compatible server such as `http://localhost:8333`. Needs an `s3://` `--out`. Uses path-style addressing. Credentials come from `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` |
 | `--config` | YAML file that replaces the packaged default config entirely |
 | `--seed` | Overrides `seed` from the config (default 42) |
 | `--branches` | Overrides the number of branches (default 120). Only affects `branches` |
