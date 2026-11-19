@@ -18,12 +18,12 @@ Task specs live in `tasks/`. Work on one task at a time, in order, only the one 
 - Source: CSV only, on SeaweedFS (S3 API). No PostgreSQL OLTP.
 - Lake: Parquet bronze on S3. Silver/gold computed with DuckDB + dbt (incremental delete+insert by `order_date`, 10-day lookback). Parquet publish by `order_date` is P2.
 - Marts: PostgreSQL. Dashboard: Metabase. Orchestrator: Airflow. One Postgres instance, three databases (airflow, metabase, analytics).
-- Everything in containers with **Podman on Windows Home** (WSL2 backend, `.wslconfig` memory=9GB). Docs must also cover Docker, Linux, macOS.
+- Everything in containers with **Podman on Windows Home** (WSL2 backend; no `.wslconfig`, so the VM has the WSL2 default of about 7.6 GiB on Ivan's machine; do not edit `.wslconfig`). Docs must also cover Docker, Linux, macOS.
 - Out of scope: Iceberg, ClickHouse, monitoring stack, Telegram alerts, Kafka/Spark, TikTok voucher.
 
 ## Hard rules
 
-- Memory budget: whole stack hard limit 5.6 GB (see the table in `docs/pipeline-design.md`). Every container gets an explicit memory limit. Never raise a limit to make something pass; report instead.
+- Memory budget: whole stack hard limit 5.6 GB (the VM has about 7.6 GiB, so headroom is about 2 GiB; keep it) (see the table in `docs/pipeline-design.md`). Every container gets an explicit memory limit. Never raise a limit to make something pass; report instead.
 - Pin every version (images, Python packages). Choose releases older than 14 days. Record choices in `docs/versions.md`.
 - No scope creep. Do not add features, services, or tools that the task does not name. Put ideas in `docs/later.md` instead.
 - Never commit `.env`, credentials, or generated data other than `sample-data/`.

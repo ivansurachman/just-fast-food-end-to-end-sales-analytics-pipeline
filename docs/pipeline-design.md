@@ -25,7 +25,7 @@ In scope: ingest, bronze, silver, gold, marts, DQ checks, backfill, Metabase P1 
 
 ## 2. Components and memory budget
 
-Hard budget: stack limits sum to **5.6 GB**, out of the 9 GB WSL2 cap. The remaining 3.4 GB is for the WSL kernel, page cache, the Podman machine and ad-hoc `jff-gen` runs. All values are design estimates; 18 Nov replaces them with `podman stats` readings.
+Hard budget: stack limits sum to **5.6 GB**. The target was a 9 GB WSL2 cap via `.wslconfig`; on Ivan's machine no `.wslconfig` exists, so the VM has the WSL2 default of about 7.6 GiB (measured in T00). The remaining roughly 2 GiB (3.4 GB with the 9 GB cap) is for the WSL kernel, page cache, the Podman machine and ad-hoc `jff-gen` runs. A `.wslconfig` with `memory=9GB` is recommended, not required. All values are design estimates; 18 Nov replaces them with `podman stats` readings.
 
 | Container | Role | Typical (est.) | Hard limit |
 |---|---|---|---|

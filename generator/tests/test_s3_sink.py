@@ -18,10 +18,11 @@ COMMANDS = (
 
 @pytest.fixture
 def s3_endpoint(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    server = ThreadedMotoServer(port=0)
+    # Bind and connect on the loopback address: Windows cannot connect to 0.0.0.0.
+    server = ThreadedMotoServer(ip_address="127.0.0.1", port=0, verbose=False)
     server.start()
-    host, port = server.get_host_and_port()
-    url = f"http://{host}:{port}"
+    _, port = server.get_host_and_port()
+    url = f"http://127.0.0.1:{port}"
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
