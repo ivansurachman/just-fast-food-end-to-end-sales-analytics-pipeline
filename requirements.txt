@@ -1,0 +1,4 @@
+# Runtime dependency of the pipeline code that the Airflow image does not already have.
+# The image installs this file and then installs the DuckDB extensions (see
+# infra/airflow/install-duckdb.sh). Versions and release dates live in docs/versions.md.
+duckdb==1.5.6

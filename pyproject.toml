@@ -1,0 +1,26 @@
+# Tool configuration for the pipeline code (`dags/` and `pipelines/`).
+# The generator keeps its own settings in `generator/pyproject.toml`.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# docs/ is the slide and report material, not pipeline code.
+exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+
+[tool.ruff.lint.per-file-ignores]
+# boto3 ships no types, so the S3 client is Any at this boundary and in the tests that use it.
+"pipelines/manifest.py" = ["ANN401"]
+"pipelines/tests/*.py" = ["ANN401"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["pipelines", "dags"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["pipelines/tests"]
