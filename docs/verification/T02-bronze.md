@@ -383,27 +383,6 @@ the run date.
 The same check exists as a test against SeaweedFS: `test_seaweedfs_roundtrip` ingests the day twice
 and asserts the ETag is unchanged.
 
-### 6. Linters and tests
-
-```
-python -m ruff --version
-ruff 0.17.4
-python -m ruff check .
-All checks passed!
-python -m ruff format --check .
-43 files already formatted
-python -m mypy
-Success: no issues found in 9 source files
-python -m pytest -q
-10 passed in 12.09s
-```
-
-`pytest` ran with `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `JFF_S3_ENDPOINT` exported, so nothing was
-skipped. `ruff` and `mypy` are pinned in `requirements-dev.txt`; `docs/` is excluded from `ruff`
-because the slide script predates this task.
-
-Verdict: **pass**.
-
 ### 3. `check_bronze` reconciles counts, and fails when it should
 
 Every entity and day reconciles, from the CLI in the scheduler container:
@@ -545,6 +524,30 @@ lifetime peak includes the earlier runs of this session. The `podman stats` samp
 for this run, and the lifetime peak did not move, i.e. the ingest did not set a new record.
 
 Verdict: **pass**, under the limit, with the margin recorded.
+
+### 6. Linters and tests
+
+```
+python -m ruff --version
+ruff 0.17.4
+python -m ruff check .
+All checks passed!
+python -m ruff format --check .
+43 files already formatted
+python -m mypy
+Success: no issues found in 9 source files
+python -m pytest -q
+10 passed in 12.09s
+```
+
+Repeated after the last code change, same result: `10 passed in 14.75s`, `All checks passed!`,
+`Success: no issues found in 9 source files`.
+
+`pytest` ran with `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `JFF_S3_ENDPOINT` exported, so nothing was
+skipped. `ruff` and `mypy` are pinned in `requirements-dev.txt`; `docs/` is excluded from `ruff`
+because the slide script predates this task.
+
+Verdict: **pass**.
 
 ## Extra: SeaweedFS filer on the host
 
