@@ -269,6 +269,12 @@ After `podman restart jff_seaweedfs_1`:
 Topology volumeSizeLimit:30720 MB hdd(volume:8/30 active:8 free:22 remote:0)
 ```
 
+and after the rest of the acceptance work (more collections and days written), still with room to grow:
+
+```
+Topology volumeSizeLimit:30720 MB hdd(volume:15/30 active:15 free:15 remote:0)
+```
+
 The volume files are sparse (`du -sh /data` = 432 KiB with 8 volumes), so this costs no disk.
 Boto3 had already written to `jff-raw`, which is why T01 did not hit this.
 
