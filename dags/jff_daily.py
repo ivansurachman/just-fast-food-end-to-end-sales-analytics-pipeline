@@ -101,10 +101,11 @@ def jff_daily() -> None:
     dbt_run = BashOperator(
         task_id="dbt_run",
         pool=DUCKDB_POOL,
-        bash_command=f"{DBT} run {DBT_ARGS}",
+        # The seed comes first: `dbt run` does not build seeds, and silver needs payment_method_map.
+        bash_command=f"{DBT} seed {DBT_ARGS} && {DBT} run {DBT_ARGS}",
         env=DBT_ENV,
         append_env=True,
-        doc="dbt run: silver and gold in DuckDB, windowed on {{ ds }}.",
+        doc="dbt seed + run: silver and gold in DuckDB, windowed on {{ ds }}.",
     )
     dbt_test = BashOperator(
         task_id="dbt_test",

@@ -98,7 +98,7 @@ One line was added to the infra notes (`docs/pipeline-design.md` section 9).
 | `infra/airflow/install-dbt.sh`, `infra/airflow/dbt-constraints.txt` | `/opt/venvs/dbt` with dbt-core 1.11.16 + dbt-duckdb 1.11.1, pinned closure |
 | `Containerfile` | runs `install-dbt.sh` next to the generator venv |
 | `compose.yaml` | named volume `jff_duckdb` on the scheduler only, `./dbt` bind mount, `DBT_DUCKDB_PATH` |
-| `dags/jff_daily.py` | `dbt_run` and `dbt_test` are `BashOperator`s calling `/opt/venvs/dbt/bin/dbt`, pool `duckdb_writer`; `load_marts` is still a placeholder |
+| `dags/jff_daily.py` | `dbt_run` is `dbt seed ... && dbt run ...` and `dbt_test` is `dbt test ...`, both `BashOperator`s calling `/opt/venvs/dbt/bin/dbt` on pool `duckdb_writer`; `load_marts` is still a placeholder |
 
 In the image:
 
@@ -131,11 +131,16 @@ dbt debug -> Connection test: [OK connection ok]
    empty field into NULL, so `payment_method = ''` was never true. Fix: `coalesce(..., '')` before
    every "is it empty" test in `silver_orders`. After the fix both counts match exactly (item 3).
 2. **The reconciliation test compared two different populations.** `assert_silver_matches_bronze_orders`
-   used the staging view (clipped at `run_date`) against the whole `silver_orders`; it failed
+   first used the staging view (clipped at `run_date`) against the whole `silver_orders`; it failed
    (`FAIL 1`) as soon as a day newer than the run date existed, which is exactly what happened after
-   the full-scale day was loaded. Fix: the test now reads the whole bronze lake itself. This was
-   caught by the first whole-DAG run, which is the behaviour the test exists for.
-3. **`dbt test` alone does not recompile views.** The staging views store the compiled `run_date` and
+   the full-scale day was loaded. Reading the whole lake instead then failed in the opposite direction
+   (bronze newer than silver on a cold start). Final version: compare **within the run window** - distinct
+   bronze orders whose order date is in `[run_date - lookback_days, run_date]` against
+   `silver_orders` in the same window. This is the statement the pipeline actually guarantees.
+3. **`dbt run` does not build seeds.** The first version of `dbt_run` was `dbt run`, which works only
+   while the `payment_method_map` seed already exists in the database; on a fresh volume the first run
+   would fail. `dbt_run` is now `dbt seed ... && dbt run ...`, and the cold start below proves it.
+4. **`dbt test` alone does not recompile views.** The staging views store the compiled `run_date` and
    `lookback_days`, so `dbt test --vars ...` after a `dbt run` with other vars tests the old window.
    The guard demo below therefore uses `dbt build --select stg_order_changes assert_lookback_window`.
    In the DAG this cannot happen: `dbt run` and `dbt test` always receive the same vars.
@@ -183,6 +188,10 @@ diff: identical
 ```
 
 The hashes are the same for all ten tables, so the incremental `delete+insert` is a fixpoint.
+
+The same check was repeated later, after the fixes below, on the full seven-day dataset: snapshot,
+`dbt build` for 2026-10-09 again, snapshot - `diff: identical` with 16812 orders, 40965 lines,
+122 changes, 8 dates.
 
 Verdict: **pass**.
 
@@ -337,28 +346,39 @@ Verdict: **pass**.
 
 ### 7. A whole DAG run succeeds in Airflow
 
+Final run, from a **cold start**: the DuckDB file was deleted first, so this is the first build of
+the database (and the seed has to be created by the task itself). Bronze already held a day newer
+than the run date (2026-10-20, full scale), which is the case the reconciliation test used to fail on.
+
 ```
-airflow dags test jff_daily 2026-10-09
-dags_test_exit=0 wall_seconds=25
+podman exec jff_airflow-scheduler_1 airflow dags test jff_daily 2026-10-09
+dags_test_exit=0 wall_seconds=30.9
 [DAG TEST] end task task_id=wait_manifest
 [DAG TEST] end task task_id=ingest_bronze
 [DAG TEST] end task task_id=check_bronze
+         dbt seed  -> Done. PASS=1  WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=1
          dbt run   -> Done. PASS=17 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=17
 [DAG TEST] end task task_id=dbt_run
          dbt test  -> Done. PASS=47 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=47
 [DAG TEST] end task task_id=dbt_test
 [DAG TEST] end task task_id=load_marts
 airflow dags list-runs jff_daily
-manual__2026-11-20T12:57:45.670502+00:00 | success | 2026-10-09 | start 12:57:45 | end 12:58:05
+manual__2026-11-20T13:01:28.640714+00:00 | success | 2026-10-09 | start 13:01:28 | end 13:01:53
 ```
 
-Run duration 19.7 s for the five real tasks (`load_marts` is still a no-op placeholder).
+Task states for that run:
 
 ```
-airflow tasks states-for-dag-run jff_daily manual__2026-11-20T12:57:45.670502+00:00
-wait_manifest success, ingest_bronze success, check_bronze success,
-dbt_run success, dbt_test success, load_marts success
+wait_manifest  success  13:01:29 -> 13:01:33
+ingest_bronze  success  13:01:33 -> 13:01:34
+check_bronze   success  13:01:34 -> 13:01:34
+dbt_run        success  13:01:34 -> 13:01:46
+dbt_test       success  13:01:46 -> 13:01:53
+load_marts     success  13:01:53 -> 13:01:53
 ```
+
+Run duration 24.9 s for the whole graph (`load_marts` is still a no-op placeholder). An earlier run
+with the same commands, before the seed fix, succeeded in 19.7 s from a warm database.
 
 Verdict: **pass**.
 

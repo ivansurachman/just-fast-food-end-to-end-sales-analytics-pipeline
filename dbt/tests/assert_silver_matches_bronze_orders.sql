@@ -1,22 +1,28 @@
--- Reconciliation: silver must hold exactly the distinct orders the bronze lake received.
+-- Reconciliation for the run's window: silver must hold every distinct order bronze received whose
+-- order date falls in [run_date - lookback_days, run_date].
 --
--- This reads every bronze object, not the windowed staging view: the staging views stop at
--- run_date, while silver keeps the whole history, so a run for an older date would otherwise
--- compare different populations.
-with bronze as (
+-- The comparison is scoped to the window on purpose. Reading the whole lake would fail as soon as a
+-- day newer than run_date exists, and reading the staging view alone would miss the older days that
+-- silver still holds.
+with bronze_orders as (
 
-    select count(distinct order_id) as orders_received
+    select distinct order_id
     from read_parquet('{{ bronze_fact_glob("orders") }}', hive_partitioning = true)
+    where cast(cast(order_ts as timestamp) as date)
+        between {{ window_start_sql() }} and {{ run_date_sql() }}
+      and source_file_date <= {{ run_date_sql() }}
 
 ),
 
-silver as (
+silver_orders as (
 
-    select count(*) as orders_kept
+    select order_id
     from {{ ref('silver_orders') }}
+    where order_date between {{ window_start_sql() }} and {{ run_date_sql() }}
 
 )
 
-select *
-from bronze, silver
-where bronze.orders_received <> silver.orders_kept
+select
+    (select count(*) from bronze_orders) as bronze_orders,
+    (select count(*) from silver_orders) as silver_orders
+where (select count(*) from bronze_orders) <> (select count(*) from silver_orders)
