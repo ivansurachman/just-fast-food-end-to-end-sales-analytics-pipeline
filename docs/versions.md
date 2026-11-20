@@ -97,6 +97,20 @@ Observation: three of these pins (`click` 8.5.1, `pydantic` 2.14.3, `typing-insp
 published on 2026-11-04 to 2026-11-06, i.e. less than 14 days ago. They come from the T00 generator
 work and are not re-pinned here because `generator/` must not change in T01.
 
+## Pipeline code (T02)
+
+`requirements.txt` holds what the Airflow image does not already ship; the image installs it as the
+airflow user and then installs the DuckDB extensions (see `infra/airflow/install-duckdb.sh`).
+`requirements-dev.txt` is the host venv for tests and linters.
+
+| Package | Version | Released | Why |
+|---|---|---|---|
+| `duckdb` | 1.5.6 | 2026-09-28 | Newest 1.5.x and older than 14 days; DuckDB 2.0.0 (2026-10-21) is a major release and not taken for a first pipeline. Has a cp312 manylinux wheel and installs the `httpfs` and `parquet` extensions. |
+| `boto3` | 1.43.117 | 2026-10-21 | Host-only, for the manifest and the S3 tests; the same pin the generator already uses. |
+| `pytest` | 9.2.0 | 2026-10-27 | Host-only, same version as the generator venv. |
+| `ruff` | 0.17.4 | 2026-11-05 | Host-only, newest release older than 14 days; 0.17.5 (2026-11-12) is too new. |
+| `mypy` | 2.4.1 | 2026-10-28 | Host-only, same version as the generator venv. |
+
 ## Not yet pinned
 
 - dbt and its adapters: added by the dbt task.
