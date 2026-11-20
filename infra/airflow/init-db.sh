@@ -31,3 +31,7 @@ else
     --firstname JFF --lastname Admin --role Admin \
     --email "${AIRFLOW_ADMIN_EMAIL}"
 fi
+
+# One DuckDB writer at a time (docs/pipeline-design.md section 4). `pools set` is idempotent, so a
+# re-run of this container only refreshes the description.
+airflow pools set duckdb_writer 1 "DuckDB single writer: one task that opens DuckDB at a time"

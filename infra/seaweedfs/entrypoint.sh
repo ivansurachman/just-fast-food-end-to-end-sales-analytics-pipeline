@@ -24,8 +24,12 @@ cat > "${config}" <<EOF
 }
 EOF
 
+# volume.max=0: the default cap of 8 volumes is reached as soon as a second bucket needs its own
+# collection, and writes then fail with "No writable volumes and no free volumes left". 0 means
+# "as many as the free disk allows" (~30 here); the volume files are sparse, so they cost no space.
 exec weed server \
   -dir=/data \
   -s3 \
   -s3.port=8333 \
-  -s3.config="${config}"
+  -s3.config="${config}" \
+  -volume.max=0

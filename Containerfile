@@ -14,8 +14,15 @@ ENV PIP_NO_CACHE_DIR=1 \
 
 COPY generator/constraints.txt generator/pyproject.toml /tmp/jff/
 COPY generator/src /tmp/jff/src
-COPY infra/airflow/install-generator.sh infra/airflow/init-db.sh infra/airflow/wait-for-db.sh /opt/jff/
+COPY requirements.txt /opt/jff/requirements.txt
+COPY infra/airflow/install-generator.sh infra/airflow/install-duckdb.sh \
+     infra/airflow/init-db.sh infra/airflow/wait-for-db.sh /opt/jff/
 
 RUN bash /opt/jff/install-generator.sh
 
+# DuckDB goes into the Airflow interpreter (the DAGs use it) and its extensions are installed here,
+# at build time, so a run never needs the internet. Runs as `airflow`, so the extensions land in
+# /home/airflow/.duckdb and are readable by the task processes.
 USER airflow
+
+RUN bash /opt/jff/install-duckdb.sh
