@@ -66,8 +66,8 @@ Verdict: **41 passed** (exit code 0).
 | `infra/postgres/init/01-databases.sql` | Roles and databases `airflow`, `metabase`, `analytics`, passwords read from the environment with `psql` `\getenv` |
 | `infra/seaweedfs/entrypoint.sh` | Renders the single S3 identity from `S3_ACCESS_KEY`/`S3_SECRET_KEY`, starts `weed server` with S3 on 8333 |
 | `infra/seaweedfs/create-buckets.sh` | Creates `jff-raw` and `jff-lake`, idempotent (checks `s3.bucket.list` first) |
-| `infra/airflow/Dockerfile` | Pinned Airflow base plus `/opt/venvs/jff` with the generator from `generator/constraints.txt` |
-| `Containerfile` (repo root) | Same build, needed on Windows; see finding 1 |
+| `infra/airflow/Dockerfile` | Pinned Airflow base plus `/opt/venvs/jff` with the generator from `generator/constraints.txt`. **Removed in T02 Step 0**: the single build file is now the repo-root `Containerfile` |
+| `Containerfile` (repo root) | Pinned Airflow base plus `/opt/venvs/jff`; the only build file since T02 Step 0 |
 | `infra/airflow/install-generator.sh` | The single place where the venv, `pip` and `setuptools` versions are defined |
 | `infra/airflow/init-db.sh` | One-shot bootstrap: wait for Postgres, `airflow db migrate`, create the admin user idempotently |
 | `infra/airflow/wait-for-db.sh` | Gate used by the three long-running Airflow services; see finding 2 |
@@ -98,10 +98,11 @@ path `C:\...` parses as scheme `c`, path non-empty, so it is treated as a git UR
 with a two-service throwaway compose file in `%TEMP%`, so it is not specific to this project. The
 bug is Windows-only (a POSIX path has no scheme).
 
-Workaround: the repo-root `Containerfile` is the file podman finds by default. `compose.yaml` still
-sets `dockerfile: infra/airflow/Dockerfile`, which `docker-compose` uses; both files call
-`infra/airflow/install-generator.sh`, so versions are defined once. Evidence that the workaround
-works is acceptance item 1 below.
+Workaround: the repo-root `Containerfile` is the file podman finds by default; `compose.yaml` pointed
+`build.dockerfile` at a second copy until T02 Step 0, and `docker-compose` used that copy. **Superseded
+in T02 Step 0:** there is now one build file, the repo-root `Containerfile`, named by
+`compose.yaml`; see `docs/verification/T02-bronze.md`. Evidence that the build works with the
+permanent provider is acceptance item 1 below; the single-file build is re-verified in T02 Step 0.
 
 ### 2. `podman-compose` 1.6.0 does not honour `depends_on: condition: service_completed_successfully`
 

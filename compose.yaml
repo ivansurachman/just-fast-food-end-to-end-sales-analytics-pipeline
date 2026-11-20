@@ -9,9 +9,9 @@ x-airflow-common: &airflow-common
   image: jff-airflow:3.3.2
   build:
     context: .
-    # docker-compose uses this path. podman-compose 1.6.0 on Windows ignores it and builds
-    # the repo-root Containerfile instead; see the comment in that file.
-    dockerfile: infra/airflow/Dockerfile
+    # One build file for both providers. podman-compose 1.6.0 on Windows ignores this key and
+    # finds the same Containerfile in the context root; see the header of that file.
+    dockerfile: Containerfile
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     # FabAuthManager gives a database-backed admin user with the password from .env;

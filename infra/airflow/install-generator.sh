@@ -2,8 +2,8 @@
 # Build-time step: create /opt/venvs/jff and install the JFF generator into it with the
 # pins from generator/constraints.txt. Runs as root inside the Airflow image.
 #
-# Both the repo-root Containerfile and infra/airflow/Dockerfile call this script, so the
-# package versions live in exactly one place.
+# Called by the repo-root Containerfile, the only build file, so the package versions
+# live in exactly one place.
 set -euo pipefail
 
 python -m venv "${JFF_VENV}"

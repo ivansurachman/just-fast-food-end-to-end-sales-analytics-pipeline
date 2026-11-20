@@ -12,12 +12,12 @@ cutoff is 2026-11-05).
 | PostgreSQL | `docker.io/library/postgres:18.4` | 2026-08-06 | Airflow 3.3.2 documents PostgreSQL 14–18 as tested; Metabase documents support for the latest stable PostgreSQL, which is 18. 18.6 (2026-11-06) is too new, so 18.4 is the newest eligible patch of the newest major both tools support. |
 | SeaweedFS | `docker.io/chrislusf/seaweedfs:4.52` | 2026-11-02 | Newest stable tag older than 14 days. 4.53 (2026-11-08) and 4.54 (2026-11-16) are too new. |
 
-The local image `jff-airflow:3.3.2` is built from `docker.io/apache/airflow:3.3.2-python3.12` by
-`infra/airflow/Dockerfile`. The repo-root `Containerfile` describes the same build because
-`podman-compose` 1.6.0 on Windows ignores `build.dockerfile` (it reads the absolute build context
-`C:\...` as a git URL, skips the `-f` lookup, and lets podman fall back to the file in the context
-root). `docker-compose` v5.6.1 uses `infra/airflow/Dockerfile`. Both call
-`infra/airflow/install-generator.sh`, so versions are defined once.
+The local image `jff-airflow:3.3.2` is built from `docker.io/apache/airflow:3.3.2-python3.12` by the
+repo-root `Containerfile`, the single build file. `compose.yaml` names it in `build.dockerfile`;
+`podman-compose` 1.6.0 on Windows ignores that key (it reads the absolute build context `C:\...` as a
+git URL, skips the `-f` lookup, and lets podman fall back to the file in the context root) but lands
+on the same `Containerfile`. Python package versions live in `infra/airflow/install-generator.sh`
+and `generator/constraints.txt`.
 
 Bundled in that Airflow image and used here: `apache-airflow-providers-fab` 3.9.0 (auth manager
 `FabAuthManager`, so the admin user from `.env` is stored in the metadata database).
