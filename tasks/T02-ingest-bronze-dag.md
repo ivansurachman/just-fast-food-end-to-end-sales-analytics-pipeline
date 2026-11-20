@@ -3,6 +3,14 @@
 Serves: 22 Nov checkpoint, step 19 Nov. Branch: `task/T02-bronze`.
 Prerequisite: T01 accepted by Ivan. Do not start earlier.
 
+## Step 0 (T01 follow-ups, about 15 minutes, before the bronze work)
+
+1. **Ports on loopback.** In `compose.yaml` publish every host port as `127.0.0.1:<host>:<container>` (postgres 5432, seaweedfs 8333, airflow-api-server 8080). T01 published `8333:8333`, which listens on all interfaces. Evidence: `podman ps --format "{{.Names}} {{.Ports}}"` shows `127.0.0.1:` for every port, and the generator still writes from the host to `http://localhost:8333`.
+2. **One build file.** Make `compose.yaml` build with `dockerfile: Containerfile` (repo root) and delete `infra/airflow/Dockerfile`, so the two files cannot drift. Evidence: `podman compose build` exits 0, `podman compose up -d` settles healthy, and `docker-compose -f compose.yaml config --quiet` exits 0.
+3. **Quote paths.** The repo path on Ivan's machine contains spaces (`D:\File Campuran\...`). Every script and command you write must quote paths.
+4. **Airflow 3.3.2 API.** Use Airflow 3 imports only (`airflow.sdk` and the standard provider). Verify each import inside the scheduler container before relying on it.
+5. Write the result of steps 1 to 3 at the top of `docs/verification/T02-bronze.md`.
+
 ## Deliverables
 
 - `dags/jff_daily.py`: DAG `jff_daily`, daily, `catchup=True`, `max_active_runs=1`, pool `duckdb_writer` (1 slot). Tasks `wait_manifest`, `ingest_bronze`, `check_bronze` as in `docs/pipeline-design.md` section 5. Later tasks are placeholders that do nothing and are clearly marked.

@@ -49,6 +49,10 @@ A task is done only when every acceptance item in its spec has evidence. Write t
 (`docs/verification/<task>.md`): the exact command, the relevant output, and a verdict. Anything not run is written as
 "not run", never as passed. End your final message with a list of what you verified and how, and what you did not verify.
 
+## Skills
+
+Project skills live in `.opencode/skills/`. Load `lean-code` before writing or editing code, `podman-windows` before touching compose files, Dockerfiles or Podman commands, and `debug-protocol` on the first failure. Do not add or install other skills.
+
 ## Workflow
 
 - One git branch per task: `task/T01-infra`, etc. Small commits with Conventional Commit messages.

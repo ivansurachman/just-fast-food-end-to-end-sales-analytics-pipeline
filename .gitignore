@@ -1,12 +1,50 @@
+# Secrets: real values never enter git. .env.example stays tracked.
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-/data/
-.env
+.coverage
+htmlcov/
 
-# tool output
+# Generated data. Only sample-data/ is tracked.
+/data/
+tmp-out/
+tmp/
+
+# DuckDB files and exports (disposable, rebuilt by backfill)
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+logs/
+
+# Airflow runtime (the repo keeps dags/ only)
+airflow.cfg
+airflow.db
+standalone_admin_password.txt
+
+# Tool output and local tool state
 graphify-out/
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/bun.lock
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
