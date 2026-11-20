@@ -1,0 +1,115 @@
+version: 2
+
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        data_tests:
+          - unique
+          - not_null
+      - name: weekday_number
+        data_tests:
+          - not_null
+
+  - name: dim_branch
+    columns:
+      - name: branch_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_channel
+    columns:
+      - name: channel_key
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - offline_dine_in
+                  - offline_takeaway
+                  - grabfood
+                  - gofood
+                  - shopeefood
+
+  - name: dim_promo
+    columns:
+      - name: promo_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_menu_item
+    columns:
+      - name: menu_item_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: fact_order
+    description: One row per order, refunds applied, gross recomputed from the lines.
+    columns:
+      - name: order_id
+        data_tests:
+          - unique
+          - not_null
+      - name: date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: branch_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_branch')
+                field: branch_key
+      - name: channel_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_channel')
+                field: channel_key
+      - name: promo_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_promo')
+                field: promo_key
+      - name: status_final
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["completed", "cancelled", "refunded"]
+
+  - name: fact_order_item
+    description: One row per order line, status denormalised from fact_order.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: line_no
+        data_tests:
+          - not_null
+      - name: date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: branch_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_branch')
+                field: branch_key
+      - name: menu_item_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_menu_item')
+                field: menu_item_key

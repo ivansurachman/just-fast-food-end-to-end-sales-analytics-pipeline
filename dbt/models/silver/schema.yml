@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: silver_orders
+    description: One row per order_id, typed, with dq_flags. Incremental on order_date.
+    columns:
+      - name: order_id
+        data_tests:
+          - unique
+          - not_null
+      - name: order_date
+        description: Local date of order_ts, never the file date.
+        data_tests:
+          - not_null
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["completed", "cancelled"]
+      - name: payment_method
+        description: Canonical payment label from the payment_method_map seed.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["cash", "qris", "ewallet", "card", "platform_settlement", "unknown"]
+      - name: branch_id
+        data_tests:
+          - not_null
+      - name: source_file_date
+        data_tests:
+          - not_null
+
+  - name: silver_order_items
+    description: One row per (order_id, line_no), typed, with dq_flags.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: line_no
+        data_tests:
+          - not_null
+      - name: menu_item_id
+        data_tests:
+          - not_null
+      - name: order_date
+        data_tests:
+          - not_null
+
+  - name: silver_order_changes
+    description: Refund changes, deduplicated, with the order date they rewrite.
+    columns:
+      - name: change_id
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: new_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["refunded"]

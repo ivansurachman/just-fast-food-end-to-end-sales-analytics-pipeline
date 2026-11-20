@@ -1,0 +1,29 @@
+name: jff
+version: "1.0.0"
+config-version: 2
+
+profile: jff
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  jff:
+    staging:
+      +materialized: view
+    silver:
+      +materialized: incremental
+      +incremental_strategy: delete+insert
+    gold:
+      +materialized: table
+
+seeds:
+  jff:
+    +quote_columns: false

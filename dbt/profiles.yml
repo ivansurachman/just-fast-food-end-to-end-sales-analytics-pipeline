@@ -1,0 +1,25 @@
+# dbt profile for the DuckDB file the silver and gold models live in.
+# Nothing secret is written here: the S3 endpoint and keys come from the container environment,
+# which compose fills from .env (only local values, .env is gitignored).
+jff:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/opt/airflow/duckdb/jff.duckdb') }}"
+      threads: 2
+      extensions:
+        - httpfs
+        - parquet
+      settings:
+        # The design's hard limits (docs/pipeline-design.md section 2): the scheduler container has
+        # 1.7 GB for Airflow plus DuckDB, so DuckDB gets 1 GB and two threads.
+        memory_limit: 1GB
+        temp_directory: /tmp/dbt-duckdb
+        # Path-style, no SSL: SeaweedFS is not AWS.
+        s3_endpoint: "{{ env_var('JFF_S3_ENDPOINT', 'http://seaweedfs:8333') | replace('http://', '') | replace('https://', '') }}"
+        s3_use_ssl: false
+        s3_url_style: path
+        s3_region: "{{ env_var('AWS_DEFAULT_REGION', 'us-east-1') }}"
+        s3_access_key_id: "{{ env_var('S3_ACCESS_KEY', env_var('AWS_ACCESS_KEY_ID', '')) }}"
+        s3_secret_access_key: "{{ env_var('S3_SECRET_KEY', env_var('AWS_SECRET_ACCESS_KEY', '')) }}"
