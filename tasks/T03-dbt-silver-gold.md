@@ -6,6 +6,16 @@ Scope for 22 Nov is deliberately **minimal**: orders, order items, order changes
 
 Read first: `docs/pipeline-design.md` sections 4, 6, 7, 8; `docs/data-model.md`; `docs/data-dictionary.md`. Take every column name and type from those files. Do not invent columns.
 
+## Step 0 (decided by Ivan after T02; do these first)
+
+1. **Demo window.** The demo dataset is 2026-10-01 to 2026-11-14 (45 days). Set the DAG `start_date` to 2026-10-01 and `end_date` to 2026-11-14, `catchup=True`, `max_active_runs=1`. Reason (found in T02): unpausing a DAG with an open end creates one run for every day up to today, and with `max_active_runs=1` the first day without a manifest blocks every later run. Give `wait_manifest` a `timeout` of 2 hours so a missing day fails loudly instead of waiting forever.
+2. **Reset the lake before acceptance.** T02 left day 2026-10-09 at scale 1.0 next to other days at scale 0.02. Before acceptance items 1 to 5, delete everything in `jff-raw` and `jff-lake` (ask Ivan first, it is data deletion), then regenerate 2026-10-03 to 2026-10-09 at scale 0.02 with `jff-gen generate --start ... --end ... --scale 0.02` inside the scheduler container using `/opt/venvs/jff/bin/jff-gen` and `--s3-endpoint http://seaweedfs:8333`. The full-scale day for item 6 is generated last.
+3. **`.env.example`.** Confirm it contains `AIRFLOW_API_AUTH_JWT_SECRET` (added in T02) with a placeholder, and every other variable that `.env` has. Report any variable missing.
+4. **Memory evidence.** For acceptance item 6 also report `anon` and `file` from `cat /sys/fs/cgroup/memory.stat` at the end of the run. T02 showed 91.5% of the limit, but page cache counts toward that number and is reclaimable. The `anon` value is what can cause an OOM kill.
+
+5. **Configurable host port for Postgres.** In `compose.yaml` publish it as `127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432`. Add `POSTGRES_HOST_PORT=5432` to `.env.example`. In Ivan's local `.env` set `POSTGRES_HOST_PORT=5433`, because a native Windows PostgreSQL 18 holds 5432 on his machine. Evidence: `podman ps` shows `127.0.0.1:5433->5432/tcp`, and a host-side connection to `127.0.0.1:5433` as role `airflow` succeeds (use `podman exec` for the check if no host `psql` exists). Add one line to the infra notes explaining the variable.
+6. **Do not unpause the DAG** until every day from 2026-10-01 to 2026-11-14 exists in `jff-raw` (T04 does this). During T03 use `airflow backfill create` or `airflow dags test` for the days you generated.
+
 ## Deliverables
 
 | Path | Content |
