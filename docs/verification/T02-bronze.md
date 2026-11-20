@@ -9,7 +9,55 @@ Only commands that were run are recorded. Anything not run is written as "not ru
 
 ### 1. Ports on loopback
 
-Not run yet. `compose.yaml` still publishes `5432:5432`, `8333:8333`, `8080:8080`.
+`compose.yaml` publishes every host port on loopback only:
+`127.0.0.1:5432:5432` (postgres), `127.0.0.1:8333:8333` (seaweedfs),
+`127.0.0.1:8080:8080` (airflow-api-server). Applied with `podman compose down` then
+`podman compose up -d`, exit 0, stack settled healthy in 15.1 s.
+
+```
+podman ps --format "{{.Names}} {{.Ports}}"
+jff_postgres_1 127.0.0.1:5432->5432/tcp
+jff_seaweedfs_1 127.0.0.1:8333->8333/tcp, 7333/tcp, 8080/tcp, 8888/tcp, 9333/tcp, 18080/tcp, 18888/tcp, 19333/tcp
+jff_airflow-api-server_1 127.0.0.1:8080->8080/tcp
+jff_airflow-scheduler_1 8080/tcp
+jff_airflow-dag-processor_1 8080/tcp
+```
+
+(Unmapped container ports such as `8080/tcp` on the scheduler are internal only; nothing is
+published for them.)
+
+The host listeners agree for the two S3/Airflow ports:
+
+```
+Get-NetTCPConnection -State Listen -LocalPort 5432,8333,8080 | Select LocalAddress,LocalPort
+LocalAddress LocalPort
+------------ ---------
+::                5432
+127.0.0.1         8333
+127.0.0.1         8080
+0.0.0.0           5432
+```
+
+The generator still writes and reads from the host through loopback (`boto3` against
+`http://localhost:8333`, path-style):
+
+```
+buckets ['jff-lake', 'jff-raw']
+raw_objects 8
+```
+
+and the Airflow API answers on loopback: `curl http://127.0.0.1:8080/api/v2/monitor/health` -> 200.
+
+Verdict: **pass for the ports this stack actually serves**. Finding: host port 5432 is answered by
+a **native Windows PostgreSQL 18 service** (`postgresql-x64-18`, pid 6912, listening on
+`0.0.0.0:5432` and `[::]:5432`), which shadows the container binding. Proof: connecting to
+`127.0.0.1:5432` as the container-only role `airflow` is rejected with `FATAL: password
+authentication failed`, while `podman exec jff_postgres_1 psql -U airflow -d airflow` succeeds.
+Nothing in the pipeline uses host port 5432 (Airflow and, later, Metabase reach Postgres over the
+compose network as `postgres:5432`), and T01 never used it either. A host-side `psql` or GUI client
+would hit the native service instead, so if that is ever needed the host port has to move (for
+example `127.0.0.1:5433:5432`) or the native service has to be stopped; both are outside this task
+and are left to Ivan.
 
 ### 2. One build file
 
@@ -122,6 +170,44 @@ healthy after 76.1 s, `docker-compose -f compose.yaml config --quiet` exit 0, on
 Applied in this step: every command recorded above that contains the repository path is quoted, and
 `docker-compose -f compose.yaml config` was run from the repo root with relative file names. No script
 was added in this step.
+
+### 4. Airflow 3.3.2 API verified inside the scheduler
+
+Run in the running scheduler container (`/opt/venvs/jff` is not on that path, on purpose: the DAG uses
+the Airflow interpreter). First attempt failed on quoting, not on Airflow:
+
+```
+podman exec jff_airflow-scheduler_1 /bin/bash -lc 'python - <<PY ... PY'
+  File "<stdin>", line 7
+    print(m, OK, getattr(mod, __version__, "))
+                                           ^
+SyntaxError: unterminated string literal (detected at line 7)
+```
+
+Hypothesis: the nested quotes of the here-document were mangled by the PowerShell -> podman -> bash
+chain, so the Python source arrived truncated. Change: pipe the script through standard input instead
+of a here-document. Result below.
+
+```
+@'...'@ | podman exec -i jff_airflow-scheduler_1 python -
+python 3.12.14
+airflow.sdk DAG dag task BaseOperator OK
+standard provider PythonOperator/PythonSensor/EmptyOperator OK
+airflow 3.3.2
+```
+
+The same probe before the fix reported `duckdb MISSING` and `pytest MISSING` (both are added to the
+image later in this task; the DAG itself only needs Airflow, boto3 and DuckDB from `pipelines/`).
+
+### 5. Written up
+
+Sections 1 to 4 above are the result of steps 1 to 3 (and 4) of the T02 spec.
+
+### Environment observations for later steps
+
+- The repo path contains spaces, so every command quoted it with double quotes on the PowerShell side.
+- Nested quoting through `podman exec ... bash -lc '...'` is unreliable here. Scripts are piped through
+  standard input or run from files instead.
 
 ## Remaining T02 work
 
