@@ -1,12 +1,14 @@
-"""`jff_daily`: wait for the generator's manifest, ingest bronze, check bronze.
+"""`jff_daily`: wait for the generator's manifest, ingest bronze, check bronze, dbt, marts.
 
 One run per generator file date (`ds`), `catchup=True` so a backfill is one run per date, and
 `max_active_runs=1` because DuckDB allows a single writer (docs/pipeline-design.md section 4).
-The ingest task also takes the one slot of the `duckdb_writer` pool.
+The ingest and dbt tasks take the one slot of the `duckdb_writer` pool.
 
-Silver, gold and marts are **placeholders** in this task: they are `EmptyOperator`s named after the
-steps in docs/pipeline-design.md section 5 so the graph already has its final shape. They do
-nothing and are replaced in T03.
+The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-14 are the 45-day demo window,
+so unpausing it can only ever create those 45 runs. `wait_manifest` gives up after two hours, so a
+day the generator never wrote fails loudly instead of waiting forever.
+
+`load_marts` is still a placeholder; it is replaced in T04.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import logging
 import os
 from datetime import datetime
 
+from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.sensors.python import PythonSensor
 from airflow.sdk import dag, get_current_context, task
@@ -31,6 +34,20 @@ S3_ENDPOINT = os.environ.get("JFF_S3_ENDPOINT")
 RAW_BUCKET = RAW_ROOT.removeprefix("s3://").split("/", 1)[0]
 DUCKDB_POOL = "duckdb_writer"
 
+DBT_HOME = "/opt/airflow/dbt"
+DBT = "/opt/venvs/dbt/bin/dbt"
+# run_date is the dbt window's right edge; lookback_days is design section 6's fixed 10-day window.
+# The single braces are dbt's JSON var syntax; Airflow renders only `{{ ds }}`.
+DBT_ARGS = (
+    f"--project-dir {DBT_HOME} --profiles-dir {DBT_HOME} "
+    """--vars '{"run_date": "{{ ds }}", "lookback_days": 10}'"""
+)
+DBT_ENV = {
+    "JFF_S3_ENDPOINT": S3_ENDPOINT or "",
+    "JFF_LAKE_ROOT": LAKE_ROOT,
+    "DBT_DUCKDB_PATH": os.environ.get("DBT_DUCKDB_PATH", "/opt/airflow/duckdb/jff.duckdb"),
+}
+
 
 def manifest_ready(ds: str) -> bool:
     """True once the generator has written the day's manifest (it writes that object last)."""
@@ -41,6 +58,7 @@ def manifest_ready(ds: str) -> bool:
     dag_id="jff_daily",
     schedule="@daily",
     start_date=datetime(2026, 10, 1),
+    end_date=datetime(2026, 11, 14),
     catchup=True,
     max_active_runs=1,
     default_args={"owner": "jff", "retries": 1, "retry_delay": 300},
@@ -54,7 +72,7 @@ def jff_daily() -> None:
         op_kwargs={"ds": "{{ ds }}"},
         mode="reschedule",
         poke_interval=30,
-        timeout=12 * 60 * 60,
+        timeout=2 * 60 * 60,
         doc="Wait for s3://<raw>/_manifests/dt=<ds>/manifest.json in reschedule mode.",
     )
 
@@ -80,12 +98,21 @@ def jff_daily() -> None:
         LOG.info("bronze check passed for %s: %s", ds, report)
         return report
 
-    # Placeholders: the design's steps 4 to 6, added by T03 and later. They do nothing.
-    dbt_run = EmptyOperator(
-        task_id="dbt_run", doc="Placeholder (T03): dbt run for silver and gold."
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        pool=DUCKDB_POOL,
+        bash_command=f"{DBT} run {DBT_ARGS}",
+        env=DBT_ENV,
+        append_env=True,
+        doc="dbt run: silver and gold in DuckDB, windowed on {{ ds }}.",
     )
-    dbt_test = EmptyOperator(
-        task_id="dbt_test", doc="Placeholder (T03): dbt tests and the lookback guard."
+    dbt_test = BashOperator(
+        task_id="dbt_test",
+        pool=DUCKDB_POOL,
+        bash_command=f"{DBT} test {DBT_ARGS}",
+        env=DBT_ENV,
+        append_env=True,
+        doc="dbt test: generic tests plus the lookback guard.",
     )
     load_marts = EmptyOperator(
         task_id="load_marts", doc="Placeholder (T04): load the PostgreSQL marts."
