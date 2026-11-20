@@ -111,7 +111,25 @@ airflow user and then installs the DuckDB extensions (see `infra/airflow/install
 | `ruff` | 0.17.4 | 2026-11-05 | Host-only, newest release older than 14 days; 0.17.5 (2026-11-12) is too new. |
 | `mypy` | 2.4.1 | 2026-10-28 | Host-only, same version as the generator venv. |
 
+## dbt virtualenv (T03)
+
+`infra/airflow/install-dbt.sh` creates `/opt/venvs/dbt` and installs from
+`infra/airflow/dbt-constraints.txt`, which pins the resolved closure (55 packages). dbt-core and
+dbt-duckdb are the only versions chosen by hand; the rest were resolved on Python 3.12 and then pinned
+so a rebuild cannot pick a newer one.
+
+| Package | Version | Released | Why |
+|---|---|---|---|
+| `dbt-core` | 1.11.16 | 2026-10-14 | Newest 1.11 patch older than 14 days, the line the duckdb adapter 1.11.x targets. 1.11.17 (2026-11-06) and 1.12.7 (2026-11-12) are too new. |
+| `dbt-duckdb` | 1.11.1 | 2026-10-26 | Newest adapter older than 14 days; requires `duckdb>=1.0.0`, so the 1.5.6 already in the image is used and both venvs share `/home/airflow/.duckdb`. |
+| `duckdb` | 1.5.6 | 2026-09-28 | Same pin as the Airflow interpreter (see the T02 table). |
+| `dbt-adapters` | 1.24.5 | 2026-07-15 | 1.24.6 (2026-11-17) is newer than the cutoff, so 1.24.5 is pinned. |
+| `pydantic` | 2.14.3 | 2026-11-05 | 2.14.4 (2026-11-19) is newer than the cutoff; 2.14.3 is also the generator's pin. |
+| `pydantic_core` | 2.50.4 | 2026-11-05 | Must match `pydantic`; 2.50.5 (2026-11-19) is too new. |
+| `python-slugify` | 9.1.3 | 2026-10-07 | 9.2.0 (2026-11-16) is newer than the cutoff. |
+
+Everything else in `dbt-constraints.txt` came from the resolver and is pinned as resolved.
+
 ## Not yet pinned
 
-- dbt and its adapters: added by the dbt task.
-- Metabase: not part of T01.
+- Metabase: T04.

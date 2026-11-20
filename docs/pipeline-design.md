@@ -162,6 +162,10 @@ All **verify** until the smoke test on Ivan's machine passes.
 - **Bind mounts only for code.** `dags/`, `dbt/` and `generator/` as relative bind mounts. Keep `.gitattributes` LF so shell scripts work inside containers.
 - **Rootless UID mapping.** The Airflow image runs as UID 50000. Writable named volumes may need `user:` or `userns_mode` settings (**verify**).
 - **Compose provider.** `podman compose` delegates to `docker-compose` or `podman-compose`. They differ on `deploy.resources` versus `mem_limit`. Pin one provider and document it.
+- **Postgres host port.** The mapping is `127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432`, and `.env.example`
+  sets `POSTGRES_HOST_PORT=5432`. On a machine where a native server already listens on 5432 (Ivan has
+  PostgreSQL 18 as a Windows service) set `POSTGRES_HOST_PORT=5433` in `.env`; nothing inside the
+  pipeline uses the host port, Airflow and Metabase reach Postgres as `postgres:5432`.
 - **Extensions offline.** DuckDB `httpfs` and `parquet` extensions are installed at image build time, so the demo does not need internet.
 - **Secrets.** `.env` is gitignored; `.env.example` is committed. No credentials in compose files.
 

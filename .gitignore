@@ -29,6 +29,8 @@ tmp/
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
+# dbt writes a random per-user id here on first run.
+.user.yml
 logs/
 
 # Airflow runtime (the repo keeps dags/ only)

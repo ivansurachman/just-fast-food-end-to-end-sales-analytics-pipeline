@@ -41,9 +41,12 @@ x-airflow-common: &airflow-common
     JFF_LAKE_ROOT: s3://jff-lake
     # `dags/` is added to sys.path by Airflow; `pipelines` is imported as a package from /opt/airflow.
     PYTHONPATH: /opt/airflow
+    # The persistent DuckDB file the dbt models live in (named volume, never a bind mount).
+    DBT_DUCKDB_PATH: /opt/airflow/duckdb/jff.duckdb
   volumes:
     - ./dags:/opt/airflow/dags
     - ./pipelines:/opt/airflow/pipelines
+    - ./dbt:/opt/airflow/dbt
 
 services:
   postgres:
@@ -60,7 +63,9 @@ services:
       POSTGRES_ANALYTICS_PASSWORD: ${POSTGRES_ANALYTICS_PASSWORD:?set POSTGRES_ANALYTICS_PASSWORD in .env}
     ports:
       # Loopback only: nothing on the LAN or in WSL needs these, and the host firewall stays shut.
-      - "127.0.0.1:5432:5432"
+      # The host port is configurable because a native PostgreSQL can already hold 5432 (Ivan's
+      # machine has PostgreSQL 18 as a Windows service, so .env sets POSTGRES_HOST_PORT=5433).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       # Postgres 18 keeps PGDATA in /var/lib/postgresql/18/docker, so mount the parent.
       - pgdata:/var/lib/postgresql
@@ -145,6 +150,14 @@ services:
     restart: unless-stopped
     entrypoint: ["/opt/jff/wait-for-db.sh"]
     command: ["airflow", "scheduler"]
+    # The YAML anchor replaces this list rather than extending it, so the code binds from
+    # x-airflow-common are repeated here, plus the DuckDB file. Only the scheduler opens it:
+    # DuckDB allows one writer, and one writer is what the duckdb_writer pool enforces.
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./pipelines:/opt/airflow/pipelines
+      - ./dbt:/opt/airflow/dbt
+      - jff_duckdb:/opt/airflow/duckdb
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,3 +179,5 @@ services:
 volumes:
   pgdata:
   seaweedfs_data:
+  # The dbt database (silver + gold). Disposable: a backfill rebuilds it from bronze.
+  jff_duckdb:
