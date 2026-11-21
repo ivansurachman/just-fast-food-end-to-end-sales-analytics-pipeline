@@ -395,7 +395,7 @@ The scheduler ran 38 of them (the other 7 dates already had a run from Part A an
 | Wall time, 38 backfill runs | **19.2 min** (about 30 s per run) |
 | Extra time to re-run the 7 older days after the scale changed (see the finding) | 4.2 min |
 | Total for all 45 dates | **23.4 min** (the STOP line is 90 min) |
-| Run states | all `success`: 46 runs over 46 dates at the end, no failure and no retry left behind |
+| Run states | all `success`: the 45 demo dates plus one empty run for 2026-11-15 (item 6), no failure, no retry left behind |
 | Peak scheduler `anon` (sampled every 10 s) | **1344 MiB** (79% of the 1700 MiB limit) |
 | Peak `memory.current` (anon + page cache) | 1551 MiB |
 | `memory.peak` | 1.782.579.200 B = the 1700 MiB ceiling: the cgroup reached its limit and the kernel reclaimed page cache; `oom_kill 0`, `oom 0` |
