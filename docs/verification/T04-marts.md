@@ -404,8 +404,7 @@ recorded as a finding.
 Dashboard: **http://localhost:3000/dashboard/2** ("Sales overview"), cards "Net sales per day",
 "Orders by channel", "Top 10 branches by net sales". Log in with the admin e-mail in
 `MB_ADMIN_EMAIL` (`admin@justfastfood.local`) and the password in `MB_ADMIN_PASSWORD` in `.env`.
-Ivan saves the screenshot at `docs/slides/img/dashboard-sales-overview.png`; not taken by me (no
-browser skill).
+The screenshot was taken by Ivan and is recorded at the end of Part C.
 
 ## Part C: full backfill
 
@@ -605,9 +604,16 @@ rows being copied).
 
 ### Item 5: Ivan's screenshot
 
-Still open: the dashboard is at **http://localhost:3000/dashboard/2** (cards "Net sales per day",
-"Orders by channel", "Top 10 branches by net sales") and Ivan saves the screenshot at
-`docs/slides/img/dashboard-sales-overview.png`.
+Done. Ivan opened **http://localhost:3000/dashboard/2** ("Sales overview", cards "Net sales per day",
+"Orders by channel", "Top 10 branches by net sales") and saved the screenshot at
+`docs/slides/img/dashboard-sales-overview.png`:
+
+```
+1917 x 1078 PNG, 228.2 KB, saved 2026-11-21 21:05
+```
+
+The file is committed with this report, so the slide deck can use it directly and the evidence stays
+in the repository.
 
 ## Review follow-ups (2026-11-21)
 
