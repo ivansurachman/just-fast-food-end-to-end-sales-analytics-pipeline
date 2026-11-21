@@ -5,6 +5,16 @@ Prerequisite: T03 accepted by Ivan. Scope is **one mart, one dashboard page, one
 
 Read first: `docs/pipeline-design.md` sections 5, 8; `docs/data-model.md` (metric definitions M1 to M8).
 
+## Order of work and cut line
+
+Do the parts in this order and write the evidence of each part before starting the next.
+
+- **Part A: mart and load.** The mart model, `load_marts`, Postgres table, DAG task. Prove it on the 7 sample days (2026-10-03 to 2026-10-09, scale 0.02) end to end through the DAG. Acceptance items 3 and 4.
+- **Part B: Metabase.** Service, API setup, three cards, dashboard. Acceptance items 1 and 4c.
+- **Part C: full backfill.** 2026-10-01 to 2026-11-14 at scale 0.1. Acceptance items 2 and 6.
+
+If Ivan says time is short, Part C runs with fewer days (Ivan names the number). Never skip Part A or B to start Part C.
+
 ## Deliverables
 
 | Path | Content |
@@ -16,9 +26,9 @@ Read first: `docs/pipeline-design.md` sections 5, 8; `docs/data-model.md` (metri
 | `compose.yaml` | Service `metabase`: pinned image older than 14 days, `mem_limit: 1400m`, `-Xmx768m`, app database = `metabase` on the compose Postgres, port `127.0.0.1:3000:3000`, healthcheck on `/api/health`, `depends_on` plus a retry for Postgres |
 | `dashboards/sales_overview/*.sql` | The SQL of each dashboard card, one file per card |
 | `dags/jff_daily.py` | `load_marts` placeholder replaced by the real task |
-| `docs/versions.md`, `docs/verification/T04-marts.md` | Pins and evidence |
+| `docs/versions.md`, `docs/verification/T04-marts.md` | Pins and evidence. Write the model ID you ran with at the top of the report |
 
-Dashboard "Sales overview" has three cards: net sales per day (line), orders by channel (bar), top 10 branches by net sales (table). Create the Metabase connection (user `analytics_ro`), the three native-SQL questions and the dashboard through the Metabase REST API on `localhost`, not by clicking. Use the `browser` skill only to take one screenshot of the dashboard at `http://localhost:3000`, and never open any other address.
+Dashboard "Sales overview" has three cards: net sales per day (line), orders by channel (bar), top 10 branches by net sales (table). Create the Metabase connection (user `analytics_ro`), the three native-SQL questions and the dashboard through the Metabase REST API on `localhost`, not by clicking. Do not use the `browser` skill. Ivan takes the dashboard screenshot himself.
 
 ## Rules
 
@@ -34,8 +44,9 @@ Dashboard "Sales overview" has three cards: net sales per day (line), orders by 
 4. Reconciliation (show all three):
    a. total net sales and order count per day in the Postgres mart equal the same numbers computed directly from `fact_order` in DuckDB;
    b. for one clean day, the mart's order count equals the number of distinct `order_id` in the raw CSV, after removing the duplicates reported in the manifest;
-   c. the three dashboard cards return the same totals as the SQL files run in `psql`.
-5. A screenshot of the dashboard saved at `docs/slides/img/dashboard-sales-overview.png`.
+   c. the three dashboard cards return the same totals as the SQL files run in `psql`;
+   d. list the `order_changes` rows whose order is not in the dataset. Expect about 6 for orders dated 2026-09-27 to 2026-09-30, which is before the demo window (T03 finding). State the number and why; do not treat it as a bug.
+5. Ivan opens `http://localhost:3000`, checks the dashboard, and saves a screenshot at `docs/slides/img/dashboard-sales-overview.png`. Report the dashboard URL and the card names so Ivan can find it.
 6. The full chain from one cold start: `podman compose down`, `up -d`, generate one new day, trigger the DAG, and see the day on the dashboard. Time it.
 7. `ruff`, `mypy`, `pytest` clean.
 

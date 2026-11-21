@@ -22,6 +22,15 @@ and `generator/constraints.txt`.
 Bundled in that Airflow image and used here: `apache-airflow-providers-fab` 3.9.0 (auth manager
 `FabAuthManager`, so the admin user from `.env` is stored in the metadata database).
 
+## Images
+
+| Image | Tag | Released | Why |
+|---|---|---|---|
+| Airflow | `docker.io/apache/airflow:3.3.2-python3.12` | 2026-09-17 | See the T01 table below |
+| PostgreSQL | `docker.io/library/postgres:18.4` | 2026-08-06 | One instance, three databases |
+| SeaweedFS | `docker.io/chrislusf/seaweedfs:4.52` | 2026-11-02 | S3 API |
+| Metabase | `docker.io/metabase/metabase:v0.65.3` | 2026-11-06 | Newest tag older than 14 days on 2026-11-21; v0.65.6 and v0.64.8 were released 2026-11-18. PostgreSQL 18 is supported as the application database ("oldest supported version through the latest stable version"), and the migrations ran against 18.4 |
+
 ## Tooling
 
 | Tool | Version | Note |
