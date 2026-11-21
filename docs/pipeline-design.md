@@ -223,5 +223,5 @@ Iceberg, ClickHouse, monitoring tooling, Telegram alerting, platform settlement 
 | D2 | Reprocessing window | Fixed 10 days plus guard test |
 | D3 | Airflow line | 3.x pinned to an exact patch tag older than two weeks (**verify** tag on 18 Nov), fall back to 2.11.x |
 | D4 | Postgres layout | One instance, three databases |
-| D5 | Demo dataset | 45 days at scale 0.1; one full-scale day only to measure RAM |
+| D5 | Demo dataset | 46 days at scale 0.1 (2026-10-01 to 2026-11-15); one full-scale day only to measure RAM. The 46th day was added on 21 Nov because a window ending at 11-14 leaves the late orders of 11-14 unprocessed forever (T04 finding) |
 | D6 | Generator inside Airflow | Defer; CLI for 22 Nov |

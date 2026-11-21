@@ -269,6 +269,31 @@ GET /api/session/properties -> version v0.65.3
 The first start also answered the STOP condition: the app database migrations ran against
 PostgreSQL 18.4 without an error.
 
+### The retry to Postgres (deliverable: "depends_on plus a retry")
+
+`infra/metabase/wait-for-postgres.sh` is the service entrypoint: it loops on `nc -z postgres 5432`
+(60 attempts, 2 s apart) and then `exec`s `/app/run_metabase.sh`. What was measured:
+
+- a normal cold start waits, then Metabase starts (item 6 timings);
+- `podman restart jff_metabase_1` while postgres is paused is refused by podman itself:
+  `some dependencies of container ... are not started`, so the runtime also enforces the dependency;
+- a throwaway container on the compose network, started with the same wrapper and the same app-DB
+  variables while postgres was paused, showed the residual gap and the recovery: `nc` passes as soon
+  as the kernel accepts on the listening socket, the JVM starts, and then Metabase retries the app
+  database itself:
+
+```
+WARN app-db.connection-pool-setup :: metabase-postgres-app-db pool did not hand out a connection within 3000 ms
+WARN app-db.connection-pool-setup :: metabase-postgres-app-db pool still unresponsive after rebuild
+INFO core.core :: Setting up and migrating Metabase DB...
+INFO app-db.setup :: Verifying postgres Database Connection ...
+(kept retrying until the 60 s cap of the probe killed it, exit 124)
+```
+
+So `nc` proves the port accepts a connection, not that the database answers. After the gate the retry
+is Metabase's own connection pool plus `restart: unless-stopped`, which is what the probe above shows.
+The probe container was created for the test only and removed by `--rm`.
+
 ### Setup through the REST API
 
 `dashboards/setup.py` (standard library only, credentials from `.env`) does first-run setup, logs in,
@@ -430,8 +455,7 @@ select cast(order_ts_local as date) as order_date, count(*),
 from fact_order group by 1 order by 1;
 ```
 
-Last rows and the verdict (the full 47-row table is in the run log; the first 43 rows carry
-`same=True`):
+Last rows and the verdict (the complete 47-row table is Appendix A, generated from the same run):
 
 ```
 2026-11-13       12967     12967     12423     12423    838518250    838518250 True
@@ -482,22 +506,20 @@ orphan_rows=166
   order date 20260924: 4    order date 20260929: 38   order date 20261027: 2
   order date 20260925: 8    order date 20260930: 62
   order date 20260926: 10   order date 20260927: 14
-first 10 rows (change_id, order_id, source_file_date):
- ('B001-20260929-00076-RF', 'B001-20260929-00076', 2026-10-01)
- ('B001-20261009-00026-RF', 'B001-20261009-00026', 2026-10-11)
- ('B004-20261006-00067-RF', 'B004-20261006-00067', 2026-10-11)
- ...
 ```
+
+The 166 rows themselves, `change_id` / `order_id` / `source_file_date`, are in Appendix B; they come
+from the same query and the same run as the counts above.
 
 Two causes, neither a pipeline bug:
 
 - **163 rows** reference orders dated 2026-09-23..2026-09-30. The dataset starts on 2026-10-01 and a
   refund can reach 8 days back, so the generator writes refunds for orders it never produced. The task
   estimated about 6 at scale 0.02; at scale 0.1 the same defect produces 163.
-- **3 rows** reference branch-days the generator dropped: branch 111 on 2026-10-02 and branch 19 on
-  2026-10-27 (both in `dropped_branch_ids` of those manifests), plus one more order of 2026-10-02. The
-  missing branch-day defect means the order was never written while a later file still carries its
-  refund.
+- **3 rows** reference branch-days the generator dropped: `B111-20261002-00031` on 2026-10-02 (branch 111,
+  in `dropped_branch_ids` of that manifest) and `B019-20261027-00013` plus `B019-20261027-00062` on
+  2026-10-27 (branch 19, also listed as dropped). The missing branch-day defect means the order was
+  never written while a later file still carries its refund.
 
 An earlier version of this section quoted 740 (an earlier database state, and the number was cut off
 by the console filter); 166 is the count of the query above on the final data.
@@ -582,11 +604,14 @@ The `reviewer` subagent rejected the first submission (4b, 4d, 6 and a loader bu
 |---|---|
 | **Loader left stale rows on an empty window** (`replace_window` was skipped) | `load_marts` now always calls `replace_window`, which applies the DDL and the `DELETE` even with zero rows; four regression tests in `pipelines/tests/test_load_marts.py` |
 | **Item 6 did not show a new day** (11-15 was outside `end_date`, so the run had no tasks) | Ivan approved `end_date = 2026-11-15`; the cold start below processes 2026-11-15 for the first time and the dashboard gains the date |
-| **4d numbers inconsistent** (740 in Part A, 949 at one point, 166 now) | Section 4d now quotes one query and the numbers from that run; the earlier figures are explained |
-| **4a full range not shown** | Section 4a now includes both SQL statements and the 47-day verdict `mismatches=0` |
+| **4d numbers inconsistent and sample rows from another run** | Section 4d quotes one query and the numbers from that run; **Appendix B** lists all 166 rows `change_id`/`order_id`/`source_file_date`, generated from the same capture as the counts |
+| **4a full range not shown** | Section 4a includes both SQL statements, **Appendix A** holds the complete 47-row comparison and `mismatches=0` |
+| **Run list not shown, double-run not verifiable** | **Appendix C** lists every run (logical date, `run_id`, type, state): 46 runs over 46 dates, one per date |
 | **4b literal form impossible** | Ivan accepted the late-arrival identity as a waiver; 45 of 46 days hold, the exception is the last generated day |
-| **Metabase had no explicit Postgres retry** | `infra/metabase/wait-for-postgres.sh` waits for `nc -z postgres 5432` and then execs `/app/run_metabase.sh`; the metabase service uses it as its entrypoint |
+| **Metabase had no explicit Postgres retry** | `infra/metabase/wait-for-postgres.sh` as the entrypoint, with the paused-postgres probe and its limitation recorded in Part B |
 | **Comment still said "clipped to run_date"** | `dbt/models/silver/silver_orders.sql` header updated to the new read rule |
+| **`requirements-dev.txt` had a BOM and a stray blank line** | rewritten as UTF-8 without BOM, LF, one trailing newline |
+| **Design doc still said 45 days** | `docs/pipeline-design.md` D5 now says 46 days (2026-10-01 to 2026-11-15) and why. `docs/slides/make_charts.py`'s caption describes the profiling dataset passed to it, not the demo window, so it stays |
 | Metabase at 95% of its limit | Ivan decided to keep `-Xmx768m` and the 1400m limit and to record the headroom as a finding (below) |
 
 `airflow dags test` on a date after `end_date` still closes the run as successful without creating any
@@ -607,3 +632,302 @@ such a green run as a processed day.
    `--reprocess-behavior completed` for that case.
 4. The demo window is now 46 days (2026-10-01 to 2026-11-15) because Ivan approved closing the edge
    day; the slides still say 45 days and need the same one-line correction.
+
+## Appendices
+
+Generated from one run of `t04_reconcile_full.py` and the Airflow API, on 2026-11-21.
+
+### Appendix A: mart vs fact_order, all 47 days
+
+| date | mart orders | fact orders | mart completed | fact completed | mart net | fact net | same |
+|---|---|---|---|---|---|---|---|
+| 2026-09-30 | 93 | 93 | 88 | 88 | 5554050 | 5554050 | True |
+| 2026-10-01 | 11564 | 11564 | 11065 | 11065 | 711114250 | 711114250 | True |
+| 2026-10-02 | 12803 | 12803 | 12282 | 12282 | 788077700 | 788077700 | True |
+| 2026-10-03 | 13495 | 13495 | 12936 | 12936 | 824269150 | 824269150 | True |
+| 2026-10-04 | 12362 | 12362 | 11822 | 11822 | 752720650 | 752720650 | True |
+| 2026-10-05 | 11075 | 11075 | 10584 | 10584 | 675124300 | 675124300 | True |
+| 2026-10-06 | 11252 | 11252 | 10784 | 10784 | 686586850 | 686586850 | True |
+| 2026-10-07 | 11468 | 11468 | 11005 | 11005 | 697085350 | 697085350 | True |
+| 2026-10-08 | 11648 | 11648 | 11102 | 11102 | 702388800 | 702388800 | True |
+| 2026-10-09 | 12746 | 12746 | 12216 | 12216 | 784174250 | 784174250 | True |
+| 2026-10-10 | 13482 | 13482 | 12931 | 12931 | 825847550 | 825847550 | True |
+| 2026-10-11 | 12301 | 12301 | 11745 | 11745 | 748433600 | 748433600 | True |
+| 2026-10-12 | 11077 | 11077 | 10609 | 10609 | 679040500 | 679040500 | True |
+| 2026-10-13 | 11148 | 11148 | 10663 | 10663 | 681262700 | 681262700 | True |
+| 2026-10-14 | 11452 | 11452 | 10948 | 10948 | 698754800 | 698754800 | True |
+| 2026-10-15 | 11715 | 11715 | 11196 | 11196 | 756864550 | 756864550 | True |
+| 2026-10-16 | 12887 | 12887 | 12324 | 12324 | 833135550 | 833135550 | True |
+| 2026-10-17 | 13346 | 13346 | 12771 | 12771 | 858965600 | 858965600 | True |
+| 2026-10-18 | 12152 | 12152 | 11658 | 11658 | 779786750 | 779786750 | True |
+| 2026-10-19 | 11007 | 11007 | 10543 | 10543 | 713706600 | 713706600 | True |
+| 2026-10-20 | 10908 | 10908 | 10457 | 10457 | 706636800 | 706636800 | True |
+| 2026-10-21 | 11283 | 11283 | 10795 | 10795 | 731434750 | 731434750 | True |
+| 2026-10-22 | 11775 | 11775 | 11296 | 11296 | 770236550 | 770236550 | True |
+| 2026-10-23 | 12904 | 12904 | 12341 | 12341 | 840363100 | 840363100 | True |
+| 2026-10-24 | 13511 | 13511 | 12937 | 12937 | 870118600 | 870118600 | True |
+| 2026-10-25 | 12160 | 12160 | 11635 | 11635 | 786283500 | 786283500 | True |
+| 2026-10-26 | 10988 | 10988 | 10515 | 10515 | 713403500 | 713403500 | True |
+| 2026-10-27 | 11156 | 11156 | 10654 | 10654 | 724523300 | 724523300 | True |
+| 2026-10-28 | 11392 | 11392 | 10919 | 10919 | 742380700 | 742380700 | True |
+| 2026-10-29 | 11666 | 11666 | 11193 | 11193 | 755461350 | 755461350 | True |
+| 2026-10-30 | 13107 | 13107 | 12556 | 12556 | 853172350 | 853172350 | True |
+| 2026-10-31 | 13537 | 13537 | 12970 | 12970 | 867726950 | 867726950 | True |
+| 2026-11-01 | 12164 | 12164 | 11625 | 11625 | 786908300 | 786908300 | True |
+| 2026-11-02 | 11107 | 11107 | 10623 | 10623 | 716878350 | 716878350 | True |
+| 2026-11-03 | 11120 | 11120 | 10643 | 10643 | 728198400 | 728198400 | True |
+| 2026-11-04 | 11288 | 11288 | 10827 | 10827 | 740099250 | 740099250 | True |
+| 2026-11-05 | 11597 | 11597 | 11096 | 11096 | 750361600 | 750361600 | True |
+| 2026-11-06 | 13007 | 13007 | 12453 | 12453 | 842627550 | 842627550 | True |
+| 2026-11-07 | 13374 | 13374 | 12795 | 12795 | 861596100 | 861596100 | True |
+| 2026-11-08 | 11946 | 11946 | 11485 | 11485 | 775437200 | 775437200 | True |
+| 2026-11-09 | 11013 | 11013 | 10560 | 10560 | 712074850 | 712074850 | True |
+| 2026-11-10 | 11221 | 11221 | 10767 | 10767 | 734223450 | 734223450 | True |
+| 2026-11-11 | 11317 | 11317 | 10846 | 10846 | 741794550 | 741794550 | True |
+| 2026-11-12 | 11645 | 11645 | 11183 | 11183 | 755025550 | 755025550 | True |
+| 2026-11-13 | 12967 | 12967 | 12423 | 12423 | 838518250 | 838518250 | True |
+| 2026-11-14 | 13404 | 13404 | 12888 | 12888 | 870181350 | 870181350 | True |
+| 2026-11-15 | 12025 | 12025 | 11588 | 11588 | 776513600 | 776513600 | True |
+
+`days=47 mismatches=0`
+
+### Appendix B: the 166 orphan order_changes rows
+
+Per order date:
+
+```
+order date 20260923: 2
+order date 20260924: 4
+order date 20260925: 8
+order date 20260926: 10
+order date 20260927: 14
+order date 20260928: 25
+order date 20260929: 38
+order date 20260930: 62
+order date 20261002: 1
+order date 20261027: 2
+```
+
+| change_id | order_id | source_file_date |
+|---|---|---|
+| B001-20260929-00076-RF | B001-20260929-00076 | 2026-10-01 |
+| B002-20260926-00091-RF | B002-20260926-00091 | 2026-10-03 |
+| B003-20260928-00010-RF | B003-20260928-00010 | 2026-10-05 |
+| B003-20260928-00030-RF | B003-20260928-00030 | 2026-10-03 |
+| B004-20260928-00007-RF | B004-20260928-00007 | 2026-10-03 |
+| B006-20260930-00071-RF | B006-20260930-00071 | 2026-10-02 |
+| B008-20260925-00054-RF | B008-20260925-00054 | 2026-10-01 |
+| B008-20260930-00005-RF | B008-20260930-00005 | 2026-10-06 |
+| B010-20260927-00061-RF | B010-20260927-00061 | 2026-10-03 |
+| B010-20260928-00079-RF | B010-20260928-00079 | 2026-10-03 |
+| B010-20260930-00009-RF | B010-20260930-00009 | 2026-10-01 |
+| B011-20260929-00076-RF | B011-20260929-00076 | 2026-10-03 |
+| B011-20260930-00026-RF | B011-20260930-00026 | 2026-10-02 |
+| B011-20260930-00048-RF | B011-20260930-00048 | 2026-10-02 |
+| B011-20260930-00101-RF | B011-20260930-00101 | 2026-10-04 |
+| B013-20260930-00045-RF | B013-20260930-00045 | 2026-10-03 |
+| B015-20260929-00027-RF | B015-20260929-00027 | 2026-10-03 |
+| B015-20260929-00033-RF | B015-20260929-00033 | 2026-10-01 |
+| B016-20260929-00079-RF | B016-20260929-00079 | 2026-10-01 |
+| B016-20260929-00086-RF | B016-20260929-00086 | 2026-10-07 |
+| B016-20260930-00016-RF | B016-20260930-00016 | 2026-10-01 |
+| B018-20260930-00003-RF | B018-20260930-00003 | 2026-10-03 |
+| B019-20260927-00007-RF | B019-20260927-00007 | 2026-10-02 |
+| B019-20261027-00013-RF | B019-20261027-00013 | 2026-10-29 |
+| B019-20261027-00062-RF | B019-20261027-00062 | 2026-10-28 |
+| B021-20260930-00110-RF | B021-20260930-00110 | 2026-10-07 |
+| B022-20260927-00037-RF | B022-20260927-00037 | 2026-10-01 |
+| B022-20260927-00191-RF | B022-20260927-00191 | 2026-10-01 |
+| B022-20260928-00098-RF | B022-20260928-00098 | 2026-10-01 |
+| B022-20260929-00138-RF | B022-20260929-00138 | 2026-10-02 |
+| B024-20260927-00027-RF | B024-20260927-00027 | 2026-10-02 |
+| B024-20260928-00009-RF | B024-20260928-00009 | 2026-10-01 |
+| B024-20260929-00058-RF | B024-20260929-00058 | 2026-10-03 |
+| B024-20260930-00062-RF | B024-20260930-00062 | 2026-10-01 |
+| B024-20260930-00099-RF | B024-20260930-00099 | 2026-10-01 |
+| B025-20260928-00026-RF | B025-20260928-00026 | 2026-10-05 |
+| B025-20260929-00116-RF | B025-20260929-00116 | 2026-10-01 |
+| B025-20260930-00150-RF | B025-20260930-00150 | 2026-10-02 |
+| B026-20260927-00043-RF | B026-20260927-00043 | 2026-10-01 |
+| B026-20260928-00121-RF | B026-20260928-00121 | 2026-10-02 |
+| B026-20260930-00018-RF | B026-20260930-00018 | 2026-10-01 |
+| B026-20260930-00029-RF | B026-20260930-00029 | 2026-10-02 |
+| B028-20260929-00076-RF | B028-20260929-00076 | 2026-10-02 |
+| B028-20260930-00098-RF | B028-20260930-00098 | 2026-10-02 |
+| B028-20260930-00102-RF | B028-20260930-00102 | 2026-10-03 |
+| B028-20260930-00121-RF | B028-20260930-00121 | 2026-10-02 |
+| B030-20260925-00048-RF | B030-20260925-00048 | 2026-10-02 |
+| B031-20260929-00050-RF | B031-20260929-00050 | 2026-10-01 |
+| B032-20260927-00055-RF | B032-20260927-00055 | 2026-10-02 |
+| B032-20260929-00054-RF | B032-20260929-00054 | 2026-10-01 |
+| B032-20260930-00079-RF | B032-20260930-00079 | 2026-10-02 |
+| B034-20260927-00013-RF | B034-20260927-00013 | 2026-10-02 |
+| B034-20260928-00024-RF | B034-20260928-00024 | 2026-10-02 |
+| B034-20260930-00046-RF | B034-20260930-00046 | 2026-10-03 |
+| B036-20260929-00073-RF | B036-20260929-00073 | 2026-10-01 |
+| B037-20260930-00064-RF | B037-20260930-00064 | 2026-10-02 |
+| B039-20260925-00085-RF | B039-20260925-00085 | 2026-10-01 |
+| B039-20260929-00041-RF | B039-20260929-00041 | 2026-10-01 |
+| B039-20260930-00004-RF | B039-20260930-00004 | 2026-10-05 |
+| B040-20260930-00027-RF | B040-20260930-00027 | 2026-10-05 |
+| B041-20260928-00075-RF | B041-20260928-00075 | 2026-10-01 |
+| B041-20260929-00066-RF | B041-20260929-00066 | 2026-10-02 |
+| B042-20260929-00156-RF | B042-20260929-00156 | 2026-10-04 |
+| B042-20260930-00048-RF | B042-20260930-00048 | 2026-10-03 |
+| B042-20260930-00097-RF | B042-20260930-00097 | 2026-10-01 |
+| B042-20260930-00120-RF | B042-20260930-00120 | 2026-10-05 |
+| B044-20260925-00080-RF | B044-20260925-00080 | 2026-10-01 |
+| B045-20260928-00081-RF | B045-20260928-00081 | 2026-10-01 |
+| B045-20260930-00067-RF | B045-20260930-00067 | 2026-10-03 |
+| B045-20260930-00091-RF | B045-20260930-00091 | 2026-10-03 |
+| B046-20260930-00061-RF | B046-20260930-00061 | 2026-10-02 |
+| B047-20260929-00063-RF | B047-20260929-00063 | 2026-10-04 |
+| B048-20260927-00073-RF | B048-20260927-00073 | 2026-10-05 |
+| B050-20260925-00007-RF | B050-20260925-00007 | 2026-10-01 |
+| B051-20260928-00078-RF | B051-20260928-00078 | 2026-10-01 |
+| B055-20260929-00096-RF | B055-20260929-00096 | 2026-10-07 |
+| B056-20260926-00088-RF | B056-20260926-00088 | 2026-10-02 |
+| B056-20260929-00033-RF | B056-20260929-00033 | 2026-10-01 |
+| B057-20260923-00073-RF | B057-20260923-00073 | 2026-10-01 |
+| B057-20260928-00086-RF | B057-20260928-00086 | 2026-10-01 |
+| B057-20260930-00049-RF | B057-20260930-00049 | 2026-10-01 |
+| B059-20260926-00015-RF | B059-20260926-00015 | 2026-10-01 |
+| B060-20260930-00011-RF | B060-20260930-00011 | 2026-10-01 |
+| B060-20260930-00077-RF | B060-20260930-00077 | 2026-10-01 |
+| B061-20260925-00088-RF | B061-20260925-00088 | 2026-10-02 |
+| B061-20260929-00003-RF | B061-20260929-00003 | 2026-10-04 |
+| B061-20260929-00117-RF | B061-20260929-00117 | 2026-10-02 |
+| B061-20260930-00013-RF | B061-20260930-00013 | 2026-10-01 |
+| B062-20260930-00015-RF | B062-20260930-00015 | 2026-10-02 |
+| B062-20260930-00043-RF | B062-20260930-00043 | 2026-10-04 |
+| B063-20260924-00017-RF | B063-20260924-00017 | 2026-10-01 |
+| B063-20260928-00011-RF | B063-20260928-00011 | 2026-10-03 |
+| B065-20260923-00152-RF | B065-20260923-00152 | 2026-10-01 |
+| B066-20260929-00098-RF | B066-20260929-00098 | 2026-10-02 |
+| B066-20260930-00043-RF | B066-20260930-00043 | 2026-10-01 |
+| B067-20260926-00061-RF | B067-20260926-00061 | 2026-10-03 |
+| B067-20260926-00100-RF | B067-20260926-00100 | 2026-10-03 |
+| B070-20260928-00046-RF | B070-20260928-00046 | 2026-10-01 |
+| B070-20260929-00029-RF | B070-20260929-00029 | 2026-10-01 |
+| B070-20260930-00043-RF | B070-20260930-00043 | 2026-10-07 |
+| B071-20260926-00149-RF | B071-20260926-00149 | 2026-10-04 |
+| B073-20260926-00020-RF | B073-20260926-00020 | 2026-10-01 |
+| B074-20260926-00103-RF | B074-20260926-00103 | 2026-10-04 |
+| B074-20260930-00080-RF | B074-20260930-00080 | 2026-10-01 |
+| B077-20260929-00002-RF | B077-20260929-00002 | 2026-10-03 |
+| B078-20260930-00065-RF | B078-20260930-00065 | 2026-10-02 |
+| B079-20260928-00012-RF | B079-20260928-00012 | 2026-10-01 |
+| B079-20260929-00063-RF | B079-20260929-00063 | 2026-10-05 |
+| B079-20260930-00074-RF | B079-20260930-00074 | 2026-10-01 |
+| B079-20260930-00083-RF | B079-20260930-00083 | 2026-10-02 |
+| B080-20260930-00119-RF | B080-20260930-00119 | 2026-10-02 |
+| B080-20260930-00145-RF | B080-20260930-00145 | 2026-10-06 |
+| B081-20260929-00040-RF | B081-20260929-00040 | 2026-10-03 |
+| B082-20260928-00053-RF | B082-20260928-00053 | 2026-10-01 |
+| B082-20260929-00053-RF | B082-20260929-00053 | 2026-10-02 |
+| B082-20260930-00050-RF | B082-20260930-00050 | 2026-10-01 |
+| B082-20260930-00059-RF | B082-20260930-00059 | 2026-10-03 |
+| B084-20260930-00029-RF | B084-20260930-00029 | 2026-10-01 |
+| B085-20260924-00038-RF | B085-20260924-00038 | 2026-10-02 |
+| B089-20260930-00041-RF | B089-20260930-00041 | 2026-10-01 |
+| B090-20260930-00013-RF | B090-20260930-00013 | 2026-10-02 |
+| B092-20260926-00067-RF | B092-20260926-00067 | 2026-10-03 |
+| B092-20260929-00037-RF | B092-20260929-00037 | 2026-10-01 |
+| B092-20260929-00064-RF | B092-20260929-00064 | 2026-10-03 |
+| B092-20260930-00025-RF | B092-20260930-00025 | 2026-10-03 |
+| B092-20260930-00069-RF | B092-20260930-00069 | 2026-10-01 |
+| B093-20260924-00022-RF | B093-20260924-00022 | 2026-10-01 |
+| B093-20260930-00006-RF | B093-20260930-00006 | 2026-10-05 |
+| B094-20260927-00023-RF | B094-20260927-00023 | 2026-10-01 |
+| B096-20260929-00087-RF | B096-20260929-00087 | 2026-10-03 |
+| B097-20260926-00061-RF | B097-20260926-00061 | 2026-10-03 |
+| B098-20260925-00013-RF | B098-20260925-00013 | 2026-10-02 |
+| B098-20260928-00058-RF | B098-20260928-00058 | 2026-10-02 |
+| B098-20260930-00026-RF | B098-20260930-00026 | 2026-10-01 |
+| B099-20260927-00006-RF | B099-20260927-00006 | 2026-10-04 |
+| B100-20260930-00027-RF | B100-20260930-00027 | 2026-10-01 |
+| B101-20260927-00002-RF | B101-20260927-00002 | 2026-10-04 |
+| B101-20260928-00049-RF | B101-20260928-00049 | 2026-10-02 |
+| B102-20260924-00044-RF | B102-20260924-00044 | 2026-10-01 |
+| B102-20260927-00124-RF | B102-20260927-00124 | 2026-10-03 |
+| B102-20260930-00012-RF | B102-20260930-00012 | 2026-10-05 |
+| B102-20260930-00060-RF | B102-20260930-00060 | 2026-10-01 |
+| B105-20260930-00034-RF | B105-20260930-00034 | 2026-10-02 |
+| B105-20260930-00086-RF | B105-20260930-00086 | 2026-10-01 |
+| B106-20260929-00018-RF | B106-20260929-00018 | 2026-10-06 |
+| B106-20260929-00120-RF | B106-20260929-00120 | 2026-10-02 |
+| B106-20260930-00057-RF | B106-20260930-00057 | 2026-10-02 |
+| B106-20260930-00087-RF | B106-20260930-00087 | 2026-10-03 |
+| B109-20260925-00023-RF | B109-20260925-00023 | 2026-10-02 |
+| B109-20260927-00039-RF | B109-20260927-00039 | 2026-10-04 |
+| B109-20260928-00049-RF | B109-20260928-00049 | 2026-10-02 |
+| B110-20260928-00064-RF | B110-20260928-00064 | 2026-10-06 |
+| B110-20260929-00034-RF | B110-20260929-00034 | 2026-10-02 |
+| B110-20260930-00014-RF | B110-20260930-00014 | 2026-10-03 |
+| B111-20261002-00031-RF | B111-20261002-00031 | 2026-10-04 |
+| B112-20260929-00017-RF | B112-20260929-00017 | 2026-10-01 |
+| B112-20260929-00080-RF | B112-20260929-00080 | 2026-10-06 |
+| B112-20260930-00114-RF | B112-20260930-00114 | 2026-10-01 |
+| B112-20260930-00156-RF | B112-20260930-00156 | 2026-10-01 |
+| B113-20260928-00050-RF | B113-20260928-00050 | 2026-10-03 |
+| B115-20260929-00100-RF | B115-20260929-00100 | 2026-10-03 |
+| B116-20260929-00016-RF | B116-20260929-00016 | 2026-10-03 |
+| B117-20260928-00164-RF | B117-20260928-00164 | 2026-10-04 |
+| B117-20260929-00018-RF | B117-20260929-00018 | 2026-10-01 |
+| B118-20260928-00064-RF | B118-20260928-00064 | 2026-10-04 |
+| B120-20260928-00084-RF | B120-20260928-00084 | 2026-10-05 |
+
+### Appendix C: DAG runs
+
+`curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v2/dags/jff_daily/dagRuns?limit=200`
+
+| logical date | run_id | run type | state |
+|---|---|---|---|
+| 2026-10-01 | `backfill__2026-10-01T00:00:00+00:00` | backfill | success |
+| 2026-10-02 | `backfill__2026-10-02T00:00:00+00:00` | backfill | success |
+| 2026-10-03 | `manual__2026-11-21T10:31:53.699979+00:00` | manual | success |
+| 2026-10-04 | `manual__2026-11-21T10:32:31.567603+00:00` | manual | success |
+| 2026-10-05 | `manual__2026-11-21T10:33:07.408771+00:00` | manual | success |
+| 2026-10-06 | `manual__2026-11-21T10:33:42.923056+00:00` | manual | success |
+| 2026-10-07 | `manual__2026-11-21T10:34:18.617002+00:00` | manual | success |
+| 2026-10-08 | `manual__2026-11-21T10:34:53.911265+00:00` | manual | success |
+| 2026-10-09 | `manual__2026-11-21T10:35:29.200993+00:00` | manual | success |
+| 2026-10-10 | `backfill__2026-10-10T00:00:00+00:00` | backfill | success |
+| 2026-10-11 | `backfill__2026-10-11T00:00:00+00:00` | backfill | success |
+| 2026-10-12 | `backfill__2026-10-12T00:00:00+00:00` | backfill | success |
+| 2026-10-13 | `backfill__2026-10-13T00:00:00+00:00` | backfill | success |
+| 2026-10-14 | `backfill__2026-10-14T00:00:00+00:00` | backfill | success |
+| 2026-10-15 | `backfill__2026-10-15T00:00:00+00:00` | backfill | success |
+| 2026-10-16 | `backfill__2026-10-16T00:00:00+00:00` | backfill | success |
+| 2026-10-17 | `backfill__2026-10-17T00:00:00+00:00` | backfill | success |
+| 2026-10-18 | `backfill__2026-10-18T00:00:00+00:00` | backfill | success |
+| 2026-10-19 | `backfill__2026-10-19T00:00:00+00:00` | backfill | success |
+| 2026-10-20 | `backfill__2026-10-20T00:00:00+00:00` | backfill | success |
+| 2026-10-21 | `backfill__2026-10-21T00:00:00+00:00` | backfill | success |
+| 2026-10-22 | `backfill__2026-10-22T00:00:00+00:00` | backfill | success |
+| 2026-10-23 | `backfill__2026-10-23T00:00:00+00:00` | backfill | success |
+| 2026-10-24 | `backfill__2026-10-24T00:00:00+00:00` | backfill | success |
+| 2026-10-25 | `backfill__2026-10-25T00:00:00+00:00` | backfill | success |
+| 2026-10-26 | `backfill__2026-10-26T00:00:00+00:00` | backfill | success |
+| 2026-10-27 | `backfill__2026-10-27T00:00:00+00:00` | backfill | success |
+| 2026-10-28 | `backfill__2026-10-28T00:00:00+00:00` | backfill | success |
+| 2026-10-29 | `backfill__2026-10-29T00:00:00+00:00` | backfill | success |
+| 2026-10-30 | `backfill__2026-10-30T00:00:00+00:00` | backfill | success |
+| 2026-10-31 | `backfill__2026-10-31T00:00:00+00:00` | backfill | success |
+| 2026-11-01 | `backfill__2026-11-01T00:00:00+00:00` | backfill | success |
+| 2026-11-02 | `manual__2026-11-21T10:37:06.290885+00:00` | manual | success |
+| 2026-11-03 | `backfill__2026-11-03T00:00:00+00:00` | backfill | success |
+| 2026-11-04 | `manual__2026-11-21T10:37:43.319776+00:00` | manual | success |
+| 2026-11-05 | `backfill__2026-11-05T00:00:00+00:00` | backfill | success |
+| 2026-11-06 | `backfill__2026-11-06T00:00:00+00:00` | backfill | success |
+| 2026-11-07 | `backfill__2026-11-07T00:00:00+00:00` | backfill | success |
+| 2026-11-08 | `backfill__2026-11-08T00:00:00+00:00` | backfill | success |
+| 2026-11-09 | `backfill__2026-11-09T00:00:00+00:00` | backfill | success |
+| 2026-11-10 | `backfill__2026-11-10T00:00:00+00:00` | backfill | success |
+| 2026-11-11 | `backfill__2026-11-11T00:00:00+00:00` | backfill | success |
+| 2026-11-12 | `backfill__2026-11-12T00:00:00+00:00` | backfill | success |
+| 2026-11-13 | `manual__2026-11-21T10:38:19.492251+00:00` | manual | success |
+| 2026-11-14 | `manual__2026-11-21T10:42:23.158780+00:00` | manual | success |
+| 2026-11-15 | `manual__2026-11-21T13:48:09.816021+00:00` | manual | success |
+
+46 runs over 46 logical dates, states ['success'].

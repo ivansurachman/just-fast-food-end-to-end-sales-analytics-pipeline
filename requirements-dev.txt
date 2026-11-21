@@ -1,4 +1,4 @@
-﻿# Host tooling for the pipeline code: the same DuckDB as the image, plus boto3 for the S3 tests
+# Host tooling for the pipeline code: the same DuckDB as the image, plus boto3 for the S3 tests
 # and the linters the acceptance list names. Versions and release dates live in docs/versions.md.
 -r requirements.txt
 boto3==1.43.117
@@ -8,4 +8,3 @@ psycopg-binary==3.3.8
 pytest==9.2.0
 ruff==0.17.4
 mypy==2.4.1
-
