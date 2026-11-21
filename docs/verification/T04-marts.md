@@ -241,8 +241,133 @@ python -m mypy                     -> Success: no issues found in 10 source file
 
 ## Part B: Metabase
 
-Not started. Acceptance items 1 and 4c, plus item 5 (Ivan's screenshot), are recorded here once the
-service is up.
+### The PostgreSQL 18 STOP condition
+
+`docs.metabase.com` is not reachable from this machine (transport error, root and path). With Ivan's
+permission the same documentation page was read on `www.metabase.com`:
+
+> Metabase supports the oldest supported version of PostgreSQL through the latest stable version.
+> (docs/latest/installation-and-operation/configuring-application-database)
+
+PostgreSQL 18 is the latest stable release, so it is supported as the application database. The
+operational proof is below: Metabase ran its migrations against it and became healthy.
+
+### Service
+
+`docker.io/metabase/metabase:v0.65.3`, released 2026-11-06 (newest tag older than 14 days; v0.65.6
+and v0.64.8 are from 2026-11-18). `mem_limit: 1400m`, `JAVA_OPTS: -Xmx768m`, application database
+`metabase` on the compose Postgres, `127.0.0.1:3000:3000`, healthcheck on `/api/health` with a 120 s
+start period.
+
+```
+podman compose up -d metabase
+state=healthy settled_seconds=48.7
+curl http://127.0.0.1:3000/api/health -> {"status":"ok"} (200)
+GET /api/session/properties -> version v0.65.3
+```
+
+The first start also answered the STOP condition: the app database migrations ran against
+PostgreSQL 18.4 without an error.
+
+### Setup through the REST API
+
+`dashboards/setup.py` (standard library only, credentials from `.env`) does first-run setup, logs in,
+creates the `JFF analytics` connection as `analytics_ro`, the three native-SQL questions and the
+dashboard. It is idempotent: a second run reuses what exists.
+
+```
+INFO first-run setup finished for admin@justfastfood.local
+INFO database JFF analytics created (id 2)
+INFO card Net sales per day created (id 40)
+INFO card Orders by channel created (id 41)
+INFO card Top 10 branches by net sales created (id 42)
+INFO dashboard Sales overview created (id 2)
+INFO dashboard Sales overview (id 2) has 3 cards
+dashboard_url=http://localhost:3000/dashboard/2
+cards=Net sales per day (id 40), Orders by channel (id 41), Top 10 branches by net sales (id 42)
+```
+
+Card SQL lives in `dashboards/sales_overview/`: `net_sales_per_day.sql` (line),
+`orders_by_channel.sql` (bar), `top_branches_by_net_sales.sql` (table).
+
+### Item 4c: the cards equal the SQL run in psql
+
+`POST /api/card/{id}/query` compared row by row with `psql -f` on the same files:
+
+```
+Net sales per day                psql_rows=  8 card_rows=  8 identical=True   total 1024171650
+Orders by channel                psql_rows=  5 card_rows=  5 identical=True   total 16812
+Top 10 branches by net sales     psql_rows= 10 card_rows= 10 identical=True   total 147492850
+```
+
+Verdict: **pass**.
+
+### Item 1: the stack with Metabase
+
+```
+podman ps -a
+jff_postgres_1          Up 47 minutes (healthy)
+jff_seaweedfs_1         Up 47 minutes (healthy)
+jff_postgres-ro_1       Exited (0)
+jff_seaweedfs-init_1    Exited (0)
+jff_airflow-init_1      Exited (0)
+jff_airflow-api-server_1 Up 46 minutes (healthy)
+jff_airflow-scheduler_1  Up 46 minutes
+jff_airflow-dag-processor_1 Up 46 minutes
+jff_metabase_1          Up 3 minutes (healthy)
+```
+
+Limits from `podman inspect .HostConfig.Memory`:
+
+| Container | Limit | Kind |
+|---|---|---|
+| postgres | 600 MB | long-running |
+| seaweedfs | 600 MB | long-running |
+| airflow-api-server | 800 MB | long-running |
+| airflow-scheduler | 1700 MB | long-running |
+| airflow-dag-processor | 500 MB | long-running |
+| metabase | 1400 MB | long-running |
+| **total** | **5600 MB** | the plafon from `docs/pipeline-design.md` section 2, not a usage |
+| postgres-ro / seaweedfs-init / airflow-init | 256 / 256 / 512 MB | one-shot, not counted (Ivan's decision) |
+
+Real usage (`podman stats --no-stream`) and the VM:
+
+```
+jff_postgres_1            146.4MB / 629.1MB   23%
+jff_seaweedfs_1           178.2MB / 629.1MB   28%
+jff_airflow-api-server_1  261.8MB / 838.9MB   31%
+jff_airflow-scheduler_1   568.9MB / 1.783GB   32%
+jff_airflow-dag-processor_1 205.3MB / 524.3MB 39%
+jff_metabase_1            1.395GB / 1.468GB   95%   <- see the note below
+podman machine ssh free -m: total 7822, used 3239, free 701, buff/cache 4125, available 4583
+```
+
+No OOM kill anywhere (`podman inspect .State.OOMKilled` false, `memory.events oom_kill 0`).
+
+**Finding to watch.** Metabase sits at 95% of its own limit and the memory is anonymous, not page
+cache (`memory.stat`: `anon` 1.317 GB, `file` 12 MB), so the kernel cannot reclaim it:
+
+```
+cat /sys/fs/cgroup/memory.current  -> 1403658240   (1338 MiB of 1400 MiB)
+cat /sys/fs/cgroup/memory.peak     -> 1409609728   (1344 MiB)
+```
+
+With `-Xmx768m` the heap is bounded; the remaining ~550 MB is JVM non-heap (metaspace, code cache,
+threads). The limit is the one the task specifies, so it was not raised. Headroom is about 60 MB: a
+heavy dashboard query during a backfill is the case to watch, and the container would need a lower
+`-Xmx` or a larger limit decided by Ivan, not by me.
+
+Verdict for item 1: **pass** - all services healthy, limits visible, long-running total is the 5600 MB
+plafon, and 4.5 GB is available in the VM (far above the 1 GiB floor), with the Metabase headroom
+recorded as a finding.
+
+### Item 5: Ivan's screenshot
+
+Dashboard: **http://localhost:3000/dashboard/2** ("Sales overview"), cards "Net sales per day",
+"Orders by channel", "Top 10 branches by net sales". Log in with the admin e-mail in
+`MB_ADMIN_EMAIL` (`admin@justfastfood.local`) and the password in `MB_ADMIN_PASSWORD` in `.env`.
+Ivan saves the screenshot at `docs/slides/img/dashboard-sales-overview.png`; not taken by me (no
+browser skill).
 
 ## Part C: full backfill
 
