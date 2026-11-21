@@ -278,9 +278,9 @@ PostgreSQL 18.4 without an error.
 - `podman restart jff_metabase_1` while postgres is paused is refused by podman itself:
   `some dependencies of container ... are not started`, so the runtime also enforces the dependency;
 - a throwaway container on the compose network, started with the same wrapper and the same app-DB
-  variables while postgres was paused, showed the residual gap and the recovery: `nc` passes as soon
-  as the kernel accepts on the listening socket, the JVM starts, and then Metabase retries the app
-  database itself:
+  variables while postgres was paused, showed the residual gap and the **retry behaviour**: `nc` passes
+  as soon as the kernel accepts on the listening socket, the JVM starts, and then Metabase retries its
+  own app database:
 
 ```
 WARN app-db.connection-pool-setup :: metabase-postgres-app-db pool did not hand out a connection within 3000 ms
@@ -290,9 +290,22 @@ INFO app-db.setup :: Verifying postgres Database Connection ...
 (kept retrying until the 60 s cap of the probe killed it, exit 124)
 ```
 
-So `nc` proves the port accepts a connection, not that the database answers. After the gate the retry
-is Metabase's own connection pool plus `restart: unless-stopped`, which is what the probe above shows.
-The probe container was created for the test only and removed by `--rm`.
+- the running instance was also put through a full pause and back:
+
+```
+card 40 query with postgres up            -> 47 rows
+podman pause jff_postgres_1, wait 10 s
+card 40 query while paused                -> request timed out (the pool cannot hand out a connection)
+podman unpause jff_postgres_1
+card 40 query after unpause               -> 47 rows again
+/api/health                               -> {"status":"ok"}
+container                                 -> running healthy
+```
+
+So `nc` proves the port accepts a connection, not that the database answers. After the gate, the retry
+is Metabase's own connection pool plus `restart: unless-stopped`: the probe above shows the retries and
+the pause/unpause run shows the service recovering once Postgres answers again. The probe container was
+created for the test only and removed by `--rm`.
 
 ### Setup through the REST API
 
@@ -631,7 +644,9 @@ such a green run as a processed day.
    the already-run days keep the old bronze until they are re-run (see item 2). Use
    `--reprocess-behavior completed` for that case.
 4. The demo window is now 46 days (2026-10-01 to 2026-11-15) because Ivan approved closing the edge
-   day; the slides still say 45 days and need the same one-line correction.
+   day. Two different 45-day numbers must not be confused: the caption in `docs/slides/make_charts.py`
+   describes the profiling dataset that script is given (45 days), so it stays; any slide text that
+   talks about the *demo window* is the one that has to say 46 days.
 
 ## Appendices
 
