@@ -1,5 +1,9 @@
 -- Bronze orders as text, one row per CSV row, no cleaning.
--- Filtered to file dates up to the run date so a run never reads a day that is still arriving.
+--
+-- No date filter here: bronze is the source of truth, and the pruning happens in silver (file dates
+-- from the window start). Reading every object is what makes a re-run of an older date a fixpoint:
+-- a partition is rebuilt from every file that can hold data for it, including files newer than the
+-- run date (Ivan's decision, 2026-11-21, after the T04 idempotence finding).
 {{ config(materialized='view') }}
 
 select
@@ -17,4 +21,3 @@ select
     platform_order_ref,
     source_file_date
 from read_parquet('{{ bronze_fact_glob("orders") }}', hive_partitioning = true)
-where source_file_date <= {{ run_date_sql() }}

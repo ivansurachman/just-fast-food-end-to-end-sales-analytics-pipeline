@@ -1,4 +1,5 @@
 -- Bronze order lines as text, one row per CSV row, no cleaning.
+-- No date filter, for the same idempotence reason as stg_orders; silver prunes by file date.
 {{ config(materialized='view') }}
 
 select
@@ -10,4 +11,3 @@ select
     line_amount,
     source_file_date
 from read_parquet('{{ bronze_fact_glob("order_items") }}', hive_partitioning = true)
-where source_file_date <= {{ run_date_sql() }}

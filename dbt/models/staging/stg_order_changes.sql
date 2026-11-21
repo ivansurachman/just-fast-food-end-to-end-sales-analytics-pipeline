@@ -1,5 +1,6 @@
--- Bronze refund changes as text. Only file dates inside the reprocessing window are read: a change
--- older than that cannot affect any order_date the run rebuilds (design section 6).
+-- Bronze refund changes as text.
+-- No date filter: silver and the lookback guard decide which file dates matter, so a re-run of an
+-- older date still sees refunds that arrived later.
 {{ config(materialized='view') }}
 
 select
@@ -10,5 +11,3 @@ select
     changed_at,
     source_file_date
 from read_parquet('{{ bronze_fact_glob("order_changes") }}', hive_partitioning = true)
-where source_file_date <= {{ run_date_sql() }}
-  and source_file_date >= {{ window_start_sql() }}

@@ -12,6 +12,11 @@
 with source as (
 
     select * from {{ ref('stg_order_changes') }}
+    {% if is_incremental() %}
+    -- A change in a file older than the window was applied by an earlier run; only newer files can
+    -- still change a partition the window rebuilds.
+    where source_file_date >= {{ window_start_sql() }}
+    {% endif %}
 
 ),
 

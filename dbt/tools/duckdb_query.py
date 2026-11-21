@@ -33,9 +33,7 @@ def list_tables(con: duckdb.DuckDBPyConnection) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("sql", nargs="?", help="SQL to run")
-    parser.add_argument(
-        "--tables", action="store_true", help="list tables with row counts"
-    )
+    parser.add_argument("--tables", action="store_true", help="list tables with row counts")
     parser.add_argument("--db", default=DEFAULT_DB, help="path of the DuckDB file")
     args = parser.parse_args(argv)
     if not args.sql and not args.tables:
@@ -43,9 +41,7 @@ def main(argv: list[str]) -> int:
     try:
         con = duckdb.connect(args.db, read_only=True)
     except duckdb.IOException as error:
-        print(
-            f"Cannot open {args.db}: {error}\nIf a dbt run is active, wait and retry."
-        )
+        print(f"Cannot open {args.db}: {error}\nIf a dbt run is active, wait and retry.")
         return 1
     if args.tables:
         list_tables(con)

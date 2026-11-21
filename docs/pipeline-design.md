@@ -101,16 +101,33 @@ Facts from the generator (config and `data-profile.md`):
 
 So a run for `ds = D` can change partitions `order_date` in `[D-10, D]`. Ten days is the observed maximum of 8 plus a margin of 2.
 
-**Decision D2 (recommended): fixed window `lookback_days = 10` with a guard test**, instead of computing affected dates dynamically. Dynamic detection is more precise but adds a join and a failure mode on the critical path. The guard: a singular dbt test fails the run if any `order_changes` row references an order older than `run_date - lookback_days`. That turns a silent correctness bug into a loud failure.
+**Decision D2 (recommended): fixed window `lookback_days = 10` with a guard test**, instead of computing affected dates dynamically. Dynamic detection is more precise but adds a join and a failure mode on the critical path. The guard: a singular dbt test fails the run if any `order_changes` row reaches its order later than `lookback_days` (see below). That turns a silent correctness bug into a loud failure.
 
-Silver rebuild for each partition X in the window reads:
+Silver rebuild for each partition X in the window reads every bronze object whose file date can hold
+data for X:
 
-- orders and items from bronze file dates `X` and `X+1` (late arrivals), clipped to `run_date`
-- order_changes from bronze file dates `X` to `run_date`, joined on `order_id`
+- orders and items from bronze file dates `X` and `X+1` (late arrivals)
+- order_changes from bronze file dates `X` up to the newest file that exists, joined on `order_id`
 
-All reads are pruned by `source_file_date`, so a run never scans all history.
+The read is bounded **below** by `window_start = run_date - lookback_days` and has **no upper bound**:
+a file newer than `run_date` is read when it exists. That is what makes a partition a pure function of
+the bronze content (revised after the T04 idempotence finding, 2026-11-21):
 
-A partition for day D is rewritten again on the run for D+1, because late orders for D arrive in the file of D+1. Dashboards therefore show yesterday's number as provisional until the next run. Say that on the slide; it is a real property, not a bug.
+- the first run for D sees files up to D, so yesterday's number is provisional;
+- the run for D+1 sees the file of D+1 and finalises D;
+- re-running D later still sees every file that arrived since, so it reproduces the same partition
+  instead of dropping the late orders and refunds that arrived after D.
+
+Pruning is kept by the lower bound alone, so a run never scans history older than its window.
+
+The guard is therefore about **lag, not about the run date**: for every change,
+`lag = source_file_date - order_date` must be `<= lookback_days`, on the whole history, every run. A
+change that needs more than ten days to reach its order would be rebuilt only on runs whose window
+still contains that order date, and the pipeline would silently miss it.
+
+A partition for day D is still rewritten again on the run for D+1, because late orders for D arrive in
+the file of D+1. Dashboards therefore show yesterday's number as provisional until the next run. Say
+that on the slide; it is a real property, not a bug.
 
 ## 7. Transformations and data quality
 
