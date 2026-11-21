@@ -217,6 +217,11 @@ services:
       JAVA_OPTS: -Xmx768m
     ports:
       - "127.0.0.1:3000:3000"
+    # podman-compose 1.6.0 does not honour the service_healthy condition, so the retry to Postgres
+    # happens in a small shell wrapper that execs the official entrypoint afterwards.
+    entrypoint: ["/bin/sh", "/opt/jff/wait-for-postgres.sh"]
+    volumes:
+      - ./infra/metabase:/opt/jff:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null"]
       interval: 15s

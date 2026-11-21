@@ -4,9 +4,10 @@ One run per generator file date (`ds`), `catchup=True` so a backfill is one run 
 `max_active_runs=1` because DuckDB allows a single writer (docs/pipeline-design.md section 4).
 The ingest and dbt tasks take the one slot of the `duckdb_writer` pool.
 
-The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-14 are the 45-day demo window,
-so unpausing it can only ever create those 45 runs. `wait_manifest` gives up after two hours, so a
-day the generator never wrote fails loudly instead of waiting forever.
+The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-15 are the 46-day demo window,
+so unpausing it can only ever create those 46 runs. `wait_manifest` gives up after two hours, so a
+day the generator never wrote fails loudly instead of waiting forever. The last day is what makes
+2026-11-14 final: its late orders arrive in the file of 2026-11-15.
 
 `load_marts` copies the mart window from DuckDB into PostgreSQL (T04).
 """
@@ -62,7 +63,9 @@ def manifest_ready(ds: str) -> bool:
     dag_id="jff_daily",
     schedule="@daily",
     start_date=datetime(2026, 10, 1),
-    end_date=datetime(2026, 11, 14),
+    # 46 days, one run per generator file date from 2026-10-01 to 2026-11-15. The previous
+    # end_date left 2026-11-14 just before the step where its late orders arrive.
+    end_date=datetime(2026, 11, 15),
     catchup=True,
     max_active_runs=1,
     default_args={"owner": "jff", "retries": 1, "retry_delay": 300},
