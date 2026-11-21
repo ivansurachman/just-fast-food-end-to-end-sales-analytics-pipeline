@@ -43,6 +43,12 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/airflow
     # The persistent DuckDB file the dbt models live in (named volume, never a bind mount).
     DBT_DUCKDB_PATH: /opt/airflow/duckdb/jff.duckdb
+    # Read by load_marts: psycopg picks up the standard PG* variables, so no credential is in code.
+    PGHOST: postgres
+    PGPORT: "5432"
+    PGDATABASE: analytics
+    PGUSER: analytics
+    PGPASSWORD: ${POSTGRES_ANALYTICS_PASSWORD:?set POSTGRES_ANALYTICS_PASSWORD in .env}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./pipelines:/opt/airflow/pipelines
@@ -76,6 +82,25 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+
+  postgres-ro:
+    image: docker.io/library/postgres:18.4
+    mem_limit: 256m
+    restart: "no"
+    # One-shot, and not counted in the memory budget. The init SQL only runs on a fresh volume, so the
+    # read-only role Metabase uses is created or refreshed here on every `up`.
+    entrypoint: ["/bin/bash", "/opt/jff/create-analytics-ro.sh"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_ANALYTICS_RO_PASSWORD: ${POSTGRES_ANALYTICS_RO_PASSWORD:?set POSTGRES_ANALYTICS_RO_PASSWORD in .env}
+      ANALYTICS_RO_USER: analytics_ro
+      ANALYTICS_DB: analytics
+      ANALYTICS_OWNER: analytics
+    volumes:
+      - ./infra/postgres:/opt/jff:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   seaweedfs:
     image: docker.io/chrislusf/seaweedfs:4.52

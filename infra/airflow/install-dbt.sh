@@ -12,7 +12,7 @@ DBT_VENV=/opt/venvs/dbt
 python -m venv "${DBT_VENV}"
 "${DBT_VENV}/bin/pip" install --upgrade "pip==26.3"
 "${DBT_VENV}/bin/pip" install --no-cache-dir -c /opt/jff/dbt-constraints.txt \
-  "dbt-core==1.11.16" "dbt-duckdb==1.11.1"
+  "dbt-core==1.11.16" "dbt-duckdb==1.11.1" "psycopg[binary]==3.3.8"
 
 "${DBT_VENV}/bin/dbt" --version
 chown -R airflow:root "${DBT_VENV}"
