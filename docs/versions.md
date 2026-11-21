@@ -127,6 +127,7 @@ so a rebuild cannot pick a newer one.
 | `pydantic` | 2.14.3 | 2026-11-05 | 2.14.4 (2026-11-19) is newer than the cutoff; 2.14.3 is also the generator's pin. |
 | `pydantic_core` | 2.50.4 | 2026-11-05 | Must match `pydantic`; 2.50.5 (2026-11-19) is too new. |
 | `python-slugify` | 9.1.3 | 2026-10-07 | 9.2.0 (2026-11-16) is newer than the cutoff. |
+| `psycopg` | 3.3.8 | 2026-11-04 | `load_marts` writes to PostgreSQL with `COPY`; 3.3.9 (2026-11-12) is newer than the cutoff. Installed as `psycopg[binary]==3.3.8` (with `psycopg-binary`) so no system libpq is needed. |
 
 Everything else in `dbt-constraints.txt` came from the resolver and is pinned as resolved.
 
