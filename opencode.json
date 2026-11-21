@@ -1,14 +1,27 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": [
-    "docs/pipeline-design.md"
-  ],
+  "model": "opencode-go/deepseek-V4.1-flash-1017",
+  "autoupdate": false,
+  "share": "disabled",
+  "instructions": ["docs/pipeline-design.md"],
   "permission": {
     "skill": {
       "*": "deny",
       "lean-code": "allow",
       "podman-windows": "allow",
       "debug-protocol": "allow"
+    },
+    "bash": {
+      "git push*": "deny",
+      "git reset --hard*": "ask",
+      "git clean*": "ask",
+      "wsl*": "ask",
+      "podman system prune*": "deny",
+      "podman volume prune*": "deny",
+      "podman machine rm*": "deny",
+      "podman volume rm*": "ask",
+      "podman compose down*-v*": "ask",
+      "podman-compose down*-v*": "ask"
     }
   }
 }

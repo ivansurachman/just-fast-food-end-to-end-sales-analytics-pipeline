@@ -53,6 +53,10 @@ A task is done only when every acceptance item in its spec has evidence. Write t
 
 Project skills live in `.opencode/skills/`. Load `lean-code` before writing or editing code, `podman-windows` before touching compose files, Dockerfiles or Podman commands, and `debug-protocol` on the first failure. Do not add or install other skills.
 
+## Agents
+
+One builder agent executes a task spec. Do not start subagents that edit files, and do not run writers in parallel: tasks share `compose.yaml`, `dags/`, and `dbt/`. The `reviewer` subagent is read-only and runs only when Ivan asks for it.
+
 ## Workflow
 
 - One git branch per task: `task/T01-infra`, etc. Small commits with Conventional Commit messages.
