@@ -1,6 +1,7 @@
 ---
 description: Read-only reviewer. Use only when Ivan asks for a review of a finished task. Checks the branch diff against the task spec and AGENTS.md and reports findings. Never edits files.
 mode: subagent
+model: opencode-go/glm-5.3-flash
 temperature: 0.1
 permission:
   edit: deny
