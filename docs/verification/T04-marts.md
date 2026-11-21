@@ -371,5 +371,170 @@ browser skill).
 
 ## Part C: full backfill
 
-Not started. Acceptance items 2, 4d (re-measured), 6 and the three-random-dates check are recorded
-here once the backfill has run.
+### Item 2: 45 days through the DAG
+
+Generation inside the scheduler container (54.6 s):
+
+```
+jff-gen generate --out s3://jff-raw --s3-endpoint http://seaweedfs:8333 \
+    --start 2026-10-01 --end 2026-11-14 --scale 0.1
+45 days, 184 objects in jff-raw, 114.7 MB
+```
+
+```
+airflow backfill create --dag-id jff_daily --from-date 2026-10-01 --to-date 2026-11-14
+runs_created=45
+```
+
+The scheduler ran 38 of them (the other 7 dates already had a run from Part A and
+`--reprocess-behavior none` reuses it), one at a time through `max_active_runs=1` and the
+`duckdb_writer` pool:
+
+| Reading | Value |
+|---|---|
+| Wall time, 38 backfill runs | **19.2 min** (about 30 s per run) |
+| Extra time to re-run the 7 older days after the scale changed (see the finding) | 4.2 min |
+| Total for all 45 dates | **23.4 min** (the STOP line is 90 min) |
+| Run states | all `success`: 46 runs over 46 dates at the end, no failure and no retry left behind |
+| Peak scheduler `anon` (sampled every 10 s) | **1344 MiB** (79% of the 1700 MiB limit) |
+| Peak `memory.current` (anon + page cache) | 1551 MiB |
+| `memory.peak` | 1.782.579.200 B = the 1700 MiB ceiling: the cgroup reached its limit and the kernel reclaimed page cache; `oom_kill 0`, `oom 0` |
+| `podman machine ssh free -m` before | total 7822, used 3493, available **4329** |
+| `podman machine ssh free -m` after | total 7822, used 4049, available **3772**, swap used 115 MB |
+
+No container was OOM-killed (`podman inspect .State.OOMKilled` false, `memory.events oom_kill 0`).
+Afterwards PostgreSQL holds `25.693` mart rows over `46` dates (2026-09-30 to 2026-11-14),
+`540.447` orders and `34.410.696.400` of net sales.
+
+**Finding while running the backfill.** `backfill create` skips dates that already have a run, so the
+seven days from Part A kept the bronze of the 0.02 dataset while the rest of the range was regenerated
+at 0.1. That showed up as 740 orphan refunds for 2026-10-03..2026-10-09. Re-running those seven dates
+(`airflow dags test` per day, 4.2 min total) rebuilt their bronze from the new raw and the orphans
+disappeared. A backfill on a range that was already run should use
+`--reprocess-behavior completed`, or the days must be re-run after a scale change.
+
+### Item 4a: mart vs fact_order on the whole range
+
+Zero mismatches over the 46 dates; the table is in the Part A section in the same shape, and the
+check now ends with `mismatches=0` and `days in fact_order but outside every loaded window: []`.
+
+### Item 4b: the CSV identity on the 45-day range
+
+No day in the generated range is clean: every manifest has late orders in or out, so the simple form
+`mart = distinct` cannot be shown. The full identity was checked for every day instead:
+
+`mart_total(d) = distinct order_id in the CSV of d - late_orders_delayed_in(d) + late_orders_delayed_out(d)`
+
+```
+2026-10-01: distinct=11564 late_in=93  late_out=93  -> expected=11564 mart=11564 OK
+2026-10-02: distinct=12883 late_in=93  late_out=13  -> expected=12803 mart=12803 OK
+2026-10-03: distinct=13352 late_in=13  late_out=156 -> expected=13495 mart=13495 OK
+2026-10-04: distinct=12392 late_in=156 late_out=126 -> expected=12362 mart=12362 OK
+days checked=45 identity_holds=44
+```
+
+The one exception is the last day of the window:
+
+```
+MISMATCH 2026-11-14 distinct=13421 late_in=200 late_out=183 expected=13404 mart=13221 diff=-183
+```
+
+The 183 orders held back from the 2026-11-14 file arrive in the 2026-11-15 file, which is outside the
+DAG's `end_date` and therefore never ingested. This is the documented "yesterday's number is
+provisional until the next run" property at the edge of the window: the last generated day can never
+be finalised by this design. For the demo it means the 45th day is provisional; if that matters,
+Ivan decides whether the window grows by one day.
+
+### Item 4d: changes whose order is not in the dataset
+
+```
+orphan_rows=166
+  order date 20260923: 2    order date 20260927: 14   order date 20261002: 1
+  order date 20260924: 4    order date 20260928: 25   order date 20261027: 2
+  order date 20260925: 8    order date 20260929: 38
+  order date 20260926: 10   order date 20260930: 62
+```
+
+Two causes, neither a pipeline bug:
+
+- 163 rows reference orders dated 2026-09-23..2026-09-30. The demo dataset starts on 2026-10-01 and a
+  refund can reach 8 days back, so the generator writes refunds for orders it never produced. The
+  task expected about 6 at scale 0.02; at scale 0.1 the same defect produces 163.
+- 3 rows reference branch-days that the generator dropped: branch 111 on 2026-10-02 and branch 19 on
+  2026-10-27, both listed in `dropped_branch_ids` of those manifests, and one more from 10-02. The
+  missing branch-day defect means the order was never written, but a later file still carries its
+  refund.
+
+Both are the generator's own defects showing up as unresolvable references, which is what item 4d
+asks to list.
+
+### Ivan's added check: three random dates after the backfill
+
+Dates drawn with `Get-Random -Count 3 -SetSeed 42`: **2026-11-02, 2026-11-04, 2026-11-13**.
+Every silver table and the mart were hashed (whole table, every column of every row) before and after
+re-running those three dates through the DAG:
+
+```
+before                                                  after
+silver_orders        540447 95001c49...  identical
+silver_order_items  1315840 85ad8a92...  identical
+silver_order_changes   4021 cf1d7789...  identical
+mart (duckdb)         25693 749dec9a...  identical
+mart (postgres)       25693 dc60fa89...  identical
+diff: identical
+```
+
+Each re-run took 36-38 s.
+
+### Item 6: the whole chain from a cold start
+
+```
+podman compose down             32.5 s
+podman compose up -d            81.3 s
+all healthy (Metabase included) 131.7 s total
+```
+
+Then a day through the pipeline. `2026-11-15` cannot be used: it is outside the DAG's `end_date`, and
+`airflow dags test jff_daily 2026-11-15` creates a run and closes it as successful **without creating a
+single task** (the log shows `DagRun Finished ... state=success` and no task entries). So the day used
+was 2026-11-14, the last day of the demo window, after deleting its three bronze objects (raw was not
+touched) to make it an arrival rather than a re-run:
+
+```
+generate (nothing to generate: raw for 11-14 already exists)
+airflow dags test jff_daily 2026-11-14   39.8 s, exit 0
+  bronze orders 2026-11-14: 13495 rows
+  dbt: PASS=1 (seed), PASS=18 (run), PASS=48 (test)
+  loaded 6281 rows for 2026-11-04 .. 2026-11-14 into mart_sales_day_branch_channel
+```
+
+The day is on the dashboard: card "Net sales per day" returns 46 rows totalling `34.410.696.400`, with
+`2026-11-14 = 860.338.850`, identical to the mart before and after the run (571 rows, 13.221 orders,
+`860.338.850`) - the run rebuilt what it had removed and changed nothing else.
+
+Note: the 2026-11-15 file that was generated while testing this (12.271 orders) stays in `jff-raw`.
+Nothing will process it while `end_date` is 2026-11-14.
+
+### Item 7: linters and tests
+
+```
+python -m ruff check .            -> All checks passed!
+python -m ruff format --check .   -> 48 files already formatted
+python -m mypy                     -> Success: no issues found in 10 source files
+python -m pytest -q                -> 10 passed in 15.61s
+```
+
+### Item 5: Ivan's screenshot
+
+Still open: the dashboard is at **http://localhost:3000/dashboard/2** and Ivan saves the screenshot at
+`docs/slides/img/dashboard-sales-overview.png`.
+
+## Findings to hand over
+
+1. Metabase memory is at 95% of its own 1400m limit and almost all of it is anonymous (1.317 GB of
+   `anon` against 12 MB of page cache). Not an OOM today, no limit raised; with the 5600 MB ceiling
+   there is no headroom to give it more without taking it from another service.
+2. The last day of the demo window (2026-11-14) can never be finalised, because its late orders live in
+   a file dated 2026-11-15, which is outside the DAG window (see item 4b).
+3. `airflow backfill create` reuses existing runs, so after regenerating a range at a different scale
+   the already-run days keep the old bronze until they are re-run (see item 2).
