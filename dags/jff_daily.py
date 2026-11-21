@@ -8,7 +8,7 @@ The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-14 are the 45
 so unpausing it can only ever create those 45 runs. `wait_manifest` gives up after two hours, so a
 day the generator never wrote fails loudly instead of waiting forever.
 
-`load_marts` is still a placeholder; it is replaced in T04.
+`load_marts` copies the mart window from DuckDB into PostgreSQL (T04).
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import os
 from datetime import datetime
 
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.sensors.python import PythonSensor
 from airflow.sdk import dag, get_current_context, task
 
@@ -47,6 +46,11 @@ DBT_ENV = {
     "JFF_LAKE_ROOT": LAKE_ROOT,
     "DBT_DUCKDB_PATH": os.environ.get("DBT_DUCKDB_PATH", "/opt/airflow/duckdb/jff.duckdb"),
 }
+# load_marts runs with the dbt virtualenv, which has both duckdb and psycopg. psycopg reads the PG*
+# variables that compose sets, so no credential appears here.
+LOAD_MARTS_CMD = (
+    "/opt/venvs/dbt/bin/python -m pipelines.load_marts --ds {{ ds }} --lookback-days 10"
+)
 
 
 def manifest_ready(ds: str) -> bool:
@@ -115,8 +119,12 @@ def jff_daily() -> None:
         append_env=True,
         doc="dbt test: generic tests plus the lookback guard.",
     )
-    load_marts = EmptyOperator(
-        task_id="load_marts", doc="Placeholder (T04): load the PostgreSQL marts."
+    load_marts = BashOperator(
+        task_id="load_marts",
+        pool=DUCKDB_POOL,
+        bash_command=LOAD_MARTS_CMD,
+        append_env=True,
+        doc="Load the mart window into PostgreSQL: delete and copy in one transaction.",
     )
 
     wait_manifest >> ingest_task() >> check_task() >> dbt_run >> dbt_test >> load_marts
