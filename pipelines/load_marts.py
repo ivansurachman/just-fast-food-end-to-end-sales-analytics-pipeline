@@ -87,9 +87,10 @@ def load_marts(
     """Load the mart window for `ds` into PostgreSQL; returns the rows written."""
     start, end = window(ds, lookback_days)
     rows = read_mart(duckdb_path, start, end)
+    # An empty window still needs the DELETE (and the DDL), otherwise rows from an earlier run
+    # linger in PostgreSQL. Never return early just because there is nothing new to load.
     if not rows:
-        LOG.warning("mart %s is empty for %s .. %s, nothing to load", MART, start, end)
-        return 0
+        LOG.info("mart %s has no rows for %s .. %s, only the window is replaced", MART, start, end)
     written = replace_window(rows, start, end)
     LOG.info("loaded %s rows for %s .. %s into %s", written, start, end, MART)
     return written

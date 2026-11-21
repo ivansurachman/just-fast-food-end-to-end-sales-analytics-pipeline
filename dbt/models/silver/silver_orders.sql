@@ -1,9 +1,10 @@
 -- Silver orders: typed, deduplicated, defects flagged, one row per order_id.
 --
 -- Window (docs/pipeline-design.md section 6): an order with order_date X can arrive in the file of
--- X or X+1, so a run for run_date reads file dates [run_date - lookback_days, run_date] and rebuilds
--- the order_date partitions [run_date - lookback_days, run_date]. The incremental strategy replaces
--- those partitions, so running the same day twice gives the same table.
+-- X or X+1, and refunds for it keep arriving later. A run for run_date therefore reads **every**
+-- file from the window start and rebuilds the order_date partitions [run_date - lookback_days,
+-- run_date]. The incremental strategy replaces those partitions, so running the same day twice
+-- gives the same table.
 --
 -- order_date is the local date of order_ts, never the file date (design section 6, data dictionary).
 {{ config(
