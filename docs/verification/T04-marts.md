@@ -395,7 +395,7 @@ The scheduler ran 38 of them (the other 7 dates already had a run from Part A an
 | Wall time, 38 backfill runs | **19.2 min** (about 30 s per run) |
 | Extra time to re-run the 7 older days after the scale changed (see the finding) | 4.2 min |
 | Total for all 45 dates | **23.4 min** (the STOP line is 90 min) |
-| Run states | all `success`: the 45 demo dates plus one empty run for 2026-11-15 (item 6), no failure, no retry left behind |
+| Run states | all `success`: 46 runs over 46 dates at the end (the 45 days of this section plus 2026-11-15, added by the review follow-up), no failure and no retry left behind |
 | Peak scheduler `anon` (sampled every 10 s) | **1344 MiB** (79% of the 1700 MiB limit) |
 | Peak `memory.current` (anon + page cache) | 1551 MiB |
 | `memory.peak` | 1.782.579.200 B = the 1700 MiB ceiling: the cgroup reached its limit and the kernel reclaimed page cache; `oom_kill 0`, `oom 0` |
@@ -403,8 +403,9 @@ The scheduler ran 38 of them (the other 7 dates already had a run from Part A an
 | `podman machine ssh free -m` after | total 7822, used 4049, available **3772**, swap used 115 MB |
 
 No container was OOM-killed (`podman inspect .State.OOMKilled` false, `memory.events oom_kill 0`).
-Afterwards PostgreSQL holds `25.693` mart rows over `46` dates (2026-09-30 to 2026-11-14),
-`540.447` orders and `34.410.696.400` of net sales.
+Afterwards PostgreSQL holds `26.266` mart rows over `47` dates (2026-09-30 to 2026-11-15),
+`552.655` orders and `35.195.073.350` of net sales. The 46th day comes from the review follow-up
+below; this section measured 45 days and the numbers for those 45 are the ones in the table.
 
 **Finding while running the backfill.** `backfill create` skips dates that already have a run, so the
 seven days from Part A kept the bronze of the 0.02 dataset while the rest of the range was regenerated
@@ -415,58 +416,92 @@ disappeared. A backfill on a range that was already run should use
 
 ### Item 4a: mart vs fact_order on the whole range
 
-Zero mismatches over the 46 dates; the table is in the Part A section in the same shape, and the
-check now ends with `mismatches=0` and `days in fact_order but outside every loaded window: []`.
+One query per side, both printed by the reconciliation script, compared day by day:
 
-### Item 4b: the CSV identity on the 45-day range
+```sql
+-- Postgres
+select order_date, sum(total_orders)::bigint, sum(completed_orders)::bigint, sum(net_amount)::bigint
+from mart_sales_day_branch_channel group by 1 order by 1;
 
-No day in the generated range is clean: every manifest has late orders in or out, so the simple form
-`mart = distinct` cannot be shown. The full identity was checked for every day instead:
+-- DuckDB
+select cast(order_ts_local as date) as order_date, count(*),
+       count(*) filter (where status_final = 'completed'),
+       coalesce(sum(net_amount) filter (where status_final = 'completed'), 0)
+from fact_order group by 1 order by 1;
+```
+
+Last rows and the verdict (the full 47-row table is in the run log; the first 43 rows carry
+`same=True`):
+
+```
+2026-11-13       12967     12967     12423     12423    838518250    838518250 True
+2026-11-14       13404     13404     12888     12888    870181350    870181350 True
+2026-11-15       12025     12025     11588     11588    776513600    776513600 True
+days=47 mismatches=0
+```
+
+Verdict: **pass** for all 47 days.
+
+### Item 4b: the CSV identity, every day, with Ivan's waiver
+
+No day in the generated range is clean: every manifest carries late orders in or out, so the literal
+form the task describes (`mart = distinct`) cannot be produced by this generator. Ivan accepted the
+general identity as the waiver (2026-11-21):
 
 `mart_total(d) = distinct order_id in the CSV of d - late_orders_delayed_in(d) + late_orders_delayed_out(d)`
 
 ```
-2026-10-01: distinct=11564 late_in=93  late_out=93  -> expected=11564 mart=11564 OK
-2026-10-02: distinct=12883 late_in=93  late_out=13  -> expected=12803 mart=12803 OK
-2026-10-03: distinct=13352 late_in=13  late_out=156 -> expected=13495 mart=13495 OK
-2026-10-04: distinct=12392 late_in=156 late_out=126 -> expected=12362 mart=12362 OK
-days checked=45 identity_holds=44
+days_checked=46 identity_holds=45
+  exception 2026-11-15: distinct=12208 late_in=183 late_out=45 expected=12070 mart=12025 diff=-45
 ```
 
-The one exception is the last day of the window:
+45 of the 46 days obey it exactly. The single exception is the last generated day (2026-11-15): its
+45 late orders live in a file dated 2026-11-16, which does not exist, so they can never arrive. That
+is the documented "yesterday's number is provisional until the next run" property, now confined to
+the newest day instead of the whole window: 2026-11-14 went from 13.221 to 13.404 orders once
+2026-11-15 was processed, so it is final.
 
-```
-MISMATCH 2026-11-14 distinct=13421 late_in=200 late_out=183 expected=13404 mart=13221 diff=-183
-```
-
-The 183 orders held back from the 2026-11-14 file arrive in the 2026-11-15 file, which is outside the
-DAG's `end_date` and therefore never ingested. This is the documented "yesterday's number is
-provisional until the next run" property at the edge of the window: the last generated day can never
-be finalised by this design. For the demo it means the 45th day is provisional; if that matters,
-Ivan decides whether the window grows by one day.
+Verdict: **pass under Ivan's waiver**, with the one edge day stated.
 
 ### Item 4d: changes whose order is not in the dataset
 
+One query, so the total and the breakdown come from the same result set:
+
+```sql
+select c.change_id, c.order_id, c.source_file_date, split_part(c.order_id, '-', 2) as order_day
+from read_parquet('s3://jff-lake/bronze/order_changes/*/order_changes.parquet',
+                  hive_partitioning = true) c
+left join silver_orders o on o.order_id = c.order_id
+where o.order_id is null
+order by c.order_id;
+```
+
 ```
 orphan_rows=166
-  order date 20260923: 2    order date 20260927: 14   order date 20261002: 1
-  order date 20260924: 4    order date 20260928: 25   order date 20261027: 2
-  order date 20260925: 8    order date 20260929: 38
-  order date 20260926: 10   order date 20260930: 62
+  order date 20260923: 2    order date 20260928: 25   order date 20261002: 1
+  order date 20260924: 4    order date 20260929: 38   order date 20261027: 2
+  order date 20260925: 8    order date 20260930: 62
+  order date 20260926: 10   order date 20260927: 14
+first 10 rows (change_id, order_id, source_file_date):
+ ('B001-20260929-00076-RF', 'B001-20260929-00076', 2026-10-01)
+ ('B001-20261009-00026-RF', 'B001-20261009-00026', 2026-10-11)
+ ('B004-20261006-00067-RF', 'B004-20261006-00067', 2026-10-11)
+ ...
 ```
 
 Two causes, neither a pipeline bug:
 
-- 163 rows reference orders dated 2026-09-23..2026-09-30. The demo dataset starts on 2026-10-01 and a
-  refund can reach 8 days back, so the generator writes refunds for orders it never produced. The
-  task expected about 6 at scale 0.02; at scale 0.1 the same defect produces 163.
-- 3 rows reference branch-days that the generator dropped: branch 111 on 2026-10-02 and branch 19 on
-  2026-10-27, both listed in `dropped_branch_ids` of those manifests, and one more from 10-02. The
-  missing branch-day defect means the order was never written, but a later file still carries its
+- **163 rows** reference orders dated 2026-09-23..2026-09-30. The dataset starts on 2026-10-01 and a
+  refund can reach 8 days back, so the generator writes refunds for orders it never produced. The task
+  estimated about 6 at scale 0.02; at scale 0.1 the same defect produces 163.
+- **3 rows** reference branch-days the generator dropped: branch 111 on 2026-10-02 and branch 19 on
+  2026-10-27 (both in `dropped_branch_ids` of those manifests), plus one more order of 2026-10-02. The
+  missing branch-day defect means the order was never written while a later file still carries its
   refund.
 
-Both are the generator's own defects showing up as unresolvable references, which is what item 4d
-asks to list.
+An earlier version of this section quoted 740 (an earlier database state, and the number was cut off
+by the console filter); 166 is the count of the query above on the final data.
+
 
 ### Ivan's added check: three random dates after the backfill
 
@@ -486,55 +521,89 @@ diff: identical
 
 Each re-run took 36-38 s.
 
-### Item 6: the whole chain from a cold start
+### Item 6: the whole chain from a cold start, with a new day
 
 ```
-podman compose down             32.5 s
-podman compose up -d            81.3 s
-all healthy (Metabase included) 131.7 s total
+podman compose down             31.0 s
+podman compose up -d            94.0 s
+all healthy (Metabase incl.)   151.7 s total
 ```
 
-Then a day through the pipeline. `2026-11-15` cannot be used: it is outside the DAG's `end_date`, and
-`airflow dags test jff_daily 2026-11-15` creates a run and closes it as successful **without creating a
-single task** (the log shows `DagRun Finished ... state=success` and no task entries). So the day used
-was 2026-11-14, the last day of the demo window, after deleting its three bronze objects (raw was not
-touched) to make it an arrival rather than a re-run:
+Then a day the pipeline had never seen (2026-11-15 was outside the old `end_date`, so it had no
+bronze and no mart row):
 
 ```
-generate (nothing to generate: raw for 11-14 already exists)
-airflow dags test jff_daily 2026-11-14   39.8 s, exit 0
-  bronze orders 2026-11-14: 13495 rows
+generate 2026-11-15              3.2 s   12.271 orders
+airflow dags test jff_daily 2026-11-15   44.8 s, exit 0
+  bronze orders 2026-11-15: 12271 rows
   dbt: PASS=1 (seed), PASS=18 (run), PASS=48 (test)
-  loaded 6281 rows for 2026-11-04 .. 2026-11-14 into mart_sales_day_branch_channel
+  loaded 6282 rows for 2026-11-05 .. 2026-11-15 into mart_sales_day_branch_channel
 ```
 
-The day is on the dashboard: card "Net sales per day" returns 46 rows totalling `34.410.696.400`, with
-`2026-11-14 = 860.338.850`, identical to the mart before and after the run (571 rows, 13.221 orders,
-`860.338.850`) - the run rebuilt what it had removed and changed nothing else.
+The day is on the dashboard: card "Net sales per day" went from 46 to 47 rows and now returns
+`2026-11-15 = 776.513.600`, total `35.195.073.350`. The mart went from 46 to 47 dates, and the day
+before became final in the same run:
 
-Note: the 2026-11-15 file that was generated while testing this (12.271 orders) stays in `jff-raw`.
-Nothing will process it while `end_date` is 2026-11-14.
+```
+before: 46 dates, max order_date 2026-11-14, 2026-11-14 orders 13221
+after : 47 dates, max order_date 2026-11-15, 2026-11-15 orders 12025, 2026-11-14 orders 13404
+```
+
+The 183 orders of 2026-11-14 that live in the 2026-11-15 file are now applied, which is why the
+window grew by one day (see Review follow-ups).
+
+Total from `down` to data on the dashboard: 151.7 s of startup + 3.2 s generate + 44.8 s run =
+about 200 s.
 
 ### Item 7: linters and tests
 
 ```
 python -m ruff check .            -> All checks passed!
-python -m ruff format --check .   -> 48 files already formatted
-python -m mypy                     -> Success: no issues found in 10 source files
-python -m pytest -q                -> 10 passed in 15.61s
+python -m ruff format --check .   -> 49 files already formatted
+python -m mypy                     -> Success: no issues found in 11 source files
+python -m pytest -q                -> 14 passed in 19.28s    (with S3_* exported)
 ```
+
+`pytest` now includes `pipelines/tests/test_load_marts.py` (4 tests: window arithmetic, the empty
+window still applying the schema and the delete, `load_marts` on an empty window, and only in-window
+rows being copied).
 
 ### Item 5: Ivan's screenshot
 
-Still open: the dashboard is at **http://localhost:3000/dashboard/2** and Ivan saves the screenshot at
+Still open: the dashboard is at **http://localhost:3000/dashboard/2** (cards "Net sales per day",
+"Orders by channel", "Top 10 branches by net sales") and Ivan saves the screenshot at
 `docs/slides/img/dashboard-sales-overview.png`.
+
+## Review follow-ups (2026-11-21)
+
+The `reviewer` subagent rejected the first submission (4b, 4d, 6 and a loader bug). What changed:
+
+| Finding | Fix |
+|---|---|
+| **Loader left stale rows on an empty window** (`replace_window` was skipped) | `load_marts` now always calls `replace_window`, which applies the DDL and the `DELETE` even with zero rows; four regression tests in `pipelines/tests/test_load_marts.py` |
+| **Item 6 did not show a new day** (11-15 was outside `end_date`, so the run had no tasks) | Ivan approved `end_date = 2026-11-15`; the cold start below processes 2026-11-15 for the first time and the dashboard gains the date |
+| **4d numbers inconsistent** (740 in Part A, 949 at one point, 166 now) | Section 4d now quotes one query and the numbers from that run; the earlier figures are explained |
+| **4a full range not shown** | Section 4a now includes both SQL statements and the 47-day verdict `mismatches=0` |
+| **4b literal form impossible** | Ivan accepted the late-arrival identity as a waiver; 45 of 46 days hold, the exception is the last generated day |
+| **Metabase had no explicit Postgres retry** | `infra/metabase/wait-for-postgres.sh` waits for `nc -z postgres 5432` and then execs `/app/run_metabase.sh`; the metabase service uses it as its entrypoint |
+| **Comment still said "clipped to run_date"** | `dbt/models/silver/silver_orders.sql` header updated to the new read rule |
+| Metabase at 95% of its limit | Ivan decided to keep `-Xmx768m` and the 1400m limit and to record the headroom as a finding (below) |
+
+`airflow dags test` on a date after `end_date` still closes the run as successful without creating any
+task (that is what happened with 2026-11-15 before the extension). It is recorded here so nobody reads
+such a green run as a processed day.
 
 ## Findings to hand over
 
 1. Metabase memory is at 95% of its own 1400m limit and almost all of it is anonymous (1.317 GB of
-   `anon` against 12 MB of page cache). Not an OOM today, no limit raised; with the 5600 MB ceiling
-   there is no headroom to give it more without taking it from another service.
-2. The last day of the demo window (2026-11-14) can never be finalised, because its late orders live in
-   a file dated 2026-11-15, which is outside the DAG window (see item 4b).
+   `anon` against 12 MB of page cache). Not an OOM, no limit raised (Ivan, 2026-11-21: keep `-Xmx768m`
+   and record it); with the 5600 MB ceiling there is no headroom to give it more without taking it from
+   another service. After the restart in the item 6 run it settled at 1.275 GB (87%).
+2. The newest generated day is always provisional: 2026-11-15 misses its 45 late orders because they
+   would live in a 2026-11-16 file that does not exist. Extending the window by one day moved this from
+   2026-11-14 (now final at 13.404 orders) to 2026-11-15. Every further extension just moves the edge.
 3. `airflow backfill create` reuses existing runs, so after regenerating a range at a different scale
-   the already-run days keep the old bronze until they are re-run (see item 2).
+   the already-run days keep the old bronze until they are re-run (see item 2). Use
+   `--reprocess-behavior completed` for that case.
+4. The demo window is now 46 days (2026-10-01 to 2026-11-15) because Ivan approved closing the edge
+   day; the slides still say 45 days and need the same one-line correction.
