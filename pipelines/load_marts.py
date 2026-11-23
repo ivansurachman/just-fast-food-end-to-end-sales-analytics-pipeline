@@ -37,8 +37,8 @@ class Mart:
 
     name: str
     columns: tuple[str, ...]
-    # Column list of the delete statement: the mart grain, without the order_date prefix.
-    copy_order: str = "order_date"
+    # ORDER BY of the read, so COPY receives the rows in a stable order.
+    order_by: str
 
     @property
     def copy_sql(self) -> str:
@@ -62,7 +62,7 @@ MARTS: Final = (
             "cogs_amount",
             "commission_amount",
         ),
-        copy_order="order_date, branch_key, channel_key",
+        order_by="order_date, branch_key, channel_key",
     ),
     Mart(
         name="mart_hourly",
@@ -73,12 +73,12 @@ MARTS: Final = (
             "total_orders",
             "completed_orders",
         ),
-        copy_order="order_date, branch_key, hour_local",
+        order_by="order_date, branch_key, hour_local",
     ),
     Mart(
         name="mart_item_day",
         columns=("order_date", "menu_item_key", "quantity", "line_amount", "line_cogs"),
-        copy_order="order_date, menu_item_key",
+        order_by="order_date, menu_item_key",
     ),
     Mart(
         name="mart_promo_day",
@@ -91,7 +91,7 @@ MARTS: Final = (
             "discount_amount",
             "net_amount",
         ),
-        copy_order="order_date, promo_key, channel_key",
+        order_by="order_date, promo_key, channel_key",
     ),
     Mart(
         name="mart_branch_coverage",
@@ -104,7 +104,7 @@ MARTS: Final = (
             "completed_orders",
             "net_amount",
         ),
-        copy_order="order_date, branch_key",
+        order_by="order_date, branch_key",
     ),
 )
 
@@ -122,7 +122,7 @@ def read_mart(duckdb_path: str, mart: Mart, start: date, end: date) -> list[tupl
         rows = con.execute(
             f"select {', '.join(mart.columns)} from {mart.name} "
             "where order_date between ? and ? "
-            f"order by {mart.copy_order}",
+            f"order by {mart.order_by}",
             [start, end],
         ).fetchall()
     finally:

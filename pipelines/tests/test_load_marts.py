@@ -126,6 +126,7 @@ def test_empty_window_still_applies_the_schema_and_the_delete(
         sql.startswith(f"delete from {mart.name} where order_date between") for sql in statements
     )
     assert fake_connection.cursor_obj.copied == []
+    assert fake_connection.committed, "the empty window must still commit the delete"
 
 
 def test_load_marts_on_an_empty_window_clears_every_mart(
