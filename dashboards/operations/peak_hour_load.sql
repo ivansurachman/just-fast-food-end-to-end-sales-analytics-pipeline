@@ -1,5 +1,6 @@
 -- M11: peak-hour load per branch, the 95th percentile of the hourly order volume.
--- The percentile is computed here from the hourly counts, never stored in a mart.
+-- The percentile is computed here from the hourly counts, never stored in a mart. Mart rows exist only
+-- for hours with at least one order, so the percentile is over operating hours, not over all 24.
 select
     branch_key,
     round(avg(hourly_orders), 1) as average_hourly_orders,
