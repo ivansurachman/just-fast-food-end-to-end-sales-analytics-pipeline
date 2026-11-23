@@ -153,6 +153,28 @@ that only exist for scanning, and the generator's own dev pins, are chosen here:
 | `types-PyYAML` | 6.0.12.20261103 | 2026-11-03 | `6.0.12.20261111` and `...1122` are newer than the cutoff. In `generator/constraints-dev.txt` |
 | `pandas-stubs` | 3.1.0.261029 | 2026-10-29 | Newest release older than 14 days. In `generator/constraints-dev.txt` |
 
+Every pin in `pipelines/constraints.txt`, with its release date. The ones already listed above
+(`duckdb`, `boto3`, `psycopg`, `pytest`, `ruff`, `mypy`) keep those dates; these are the remaining
+transitive and tool-support pins:
+
+| Package | Version | Released |
+|---|---|---|
+| `botocore` | 1.43.126 | 2026-11-06 |
+| `s3transfer` | 0.19.3 | 2026-10-19 |
+| `jmespath` | 1.1.0 | 2026-01-22 |
+| `python-dateutil` | 2.9.0.post0 | 2024-03-01 |
+| `six` | 1.17.0 | 2024-12-04 |
+| `urllib3` | 2.8.0 | 2026-09-15 |
+| `psycopg-binary` | 3.3.8 | 2026-11-04 |
+| `pluggy` | 1.7.0 | 2026-10-15 |
+| `iniconfig` | 2.3.1 | 2026-10-06 |
+| `packaging` | 26.3 | 2026-08-04 |
+| `mypy_extensions` | 1.2.0 | 2026-11-03 |
+| `typing_extensions` | 4.16.0 | 2026-07-02 |
+
+`botocore` is held at 1.43.126 rather than 1.43.127 because 1.43.127 was released 2026-11-09, exactly
+14 days before this pin, and the rule is *older* than 14 days. `boto3` 1.43.117 accepts any
+`botocore>=1.43.117,<1.44.0`, so the adapter version is unaffected.
 GitHub Actions, pinned to tags older than 14 days:
 
 | Action | Tag | Released |

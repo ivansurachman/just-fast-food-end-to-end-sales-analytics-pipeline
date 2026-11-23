@@ -23,7 +23,10 @@ pip install -c constraints.txt -c constraints-dev.txt -e ".[dev,s3test]"
 jff-gen dim all --out ../data
 jff-gen generate --start 2026-09-16 --end 2026-10-30 --scale 0.1 --out ../data
 jff-gen profile --data ../data --out ../docs/data-profile.md
-pytest && ruff check . && mypy src tests
+pytest
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy src tests
 ```
 
 Full command reference: `docs/cli-guide.md`. Dataset profile: `docs/data-profile.md`. The same date
@@ -113,12 +116,12 @@ The DAG is bounded by `start_date` and `end_date` in `dags/jff_daily.py`, and it
 unpaused. A day outside that window never executes. The working order is:
 
 1. Generate the day into the raw bucket, inside the scheduler container:
-   `podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen generate --date 2026-11-17 --scale 0.1 --out s3://jff-raw --s3-endpoint http://seaweedfs:8333`
+   `podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen generate --date 2026-11-18 --scale 0.1 --out s3://jff-raw --s3-endpoint http://seaweedfs:8333`
 2. Make sure `end_date` covers it: extend it in `dags/jff_daily.py` and wait for the next parse
    (`airflow dags list-import-errors` stays empty).
 3. Unpause: `podman exec jff_airflow-scheduler_1 airflow dags unpause jff_daily` (or the toggle in the UI).
 4. Trigger the day from the UI (the play button) or with
-   `podman exec jff_airflow-scheduler_1 airflow backfill create --dag-id jff_daily --from-date 2026-11-17 --to-date 2026-11-17`.
+   `podman exec jff_airflow-scheduler_1 airflow backfill create --dag-id jff_daily --from-date 2026-11-18 --to-date 2026-11-18`.
 5. Watch it: `airflow tasks states-for-dag-run jff_daily <run_id>` shows the seven tasks. The dashboard
    picks the day up once `load_marts` has run.
 

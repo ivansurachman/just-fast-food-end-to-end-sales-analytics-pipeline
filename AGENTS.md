@@ -52,7 +52,8 @@ Generator, from `generator/`:
 
     python -m pip install -c constraints.txt -c constraints-dev.txt -e ".[dev,s3test]"
     python -m pytest -q
-    python -m ruff check . && python -m ruff format --check .
+    python -m ruff check .
+    python -m ruff format --check .
     python -m mypy src tests
 
 Pins: `generator/constraints.txt` (runtime) and `generator/constraints-dev.txt` (tools).
