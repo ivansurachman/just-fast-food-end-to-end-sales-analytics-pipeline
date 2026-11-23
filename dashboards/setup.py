@@ -1,7 +1,8 @@
 """Set up Metabase through its REST API: admin account, analytics connection, cards, dashboard.
 
-Idempotent: on a database that is already set up it logs in, then reuses or creates the connection,
-the three questions and the dashboard, so running it twice does not duplicate anything.
+Idempotent and *updating*: on a database that is already set up it logs in, then reuses the
+connection, **replaces the SQL of the three questions** with the files in `sales_overview/` and
+rewrites the dashboard cards, so changing a `.sql` file and re-running this script is enough.
 
     python dashboards/setup.py            # from the repo root, with the stack up
     python dashboards/setup.py --dry-run  # print what it would do
@@ -111,6 +112,11 @@ class Metabase:
         _, body = self.request("POST", "/session", {"username": email, "password": password})
         self.session_id = body["id"]
 
+    def search(self, model: str) -> list[dict[str, Any]]:
+        """Every item of one model (card, dashboard) in the search index."""
+        _, result = self.request("GET", f"/search?q=&models={model}&limit=200")
+        return result.get("data", [])
+
     def database_id(self, name: str, create: dict[str, Any] | None) -> int:
         _, databases = self.request("GET", "/database")
         for database in databases.get("data", databases if isinstance(databases, list) else []):
@@ -123,21 +129,23 @@ class Metabase:
         LOG.info("database %s created (id %s)", name, created["id"])
         return int(created["id"])
 
-    def card_id(self, name: str, create: dict[str, Any] | None) -> int:
-        _, cards = self.request("GET", "/search?q=&models=card&limit=200")
-        for card in cards.get("data", []):
+    def ensure_card(self, name: str, definition: dict[str, Any]) -> int:
+        """Create the card, or replace the definition of the card with that name.
+
+        Updating matters: the SQL of a card lives in this repository, so re-running the setup after
+        changing a file must change the card, not leave the old query in Metabase.
+        """
+        for card in self.search("card"):
             if card.get("name") == name:
-                LOG.info("card %s already exists (id %s)", name, card["id"])
+                self.request("PUT", f"/card/{card['id']}", definition)
+                LOG.info("card %s updated (id %s)", name, card["id"])
                 return int(card["id"])
-        if create is None:
-            raise RuntimeError(f"card {name} does not exist and no definition was given")
-        _, created = self.request("POST", "/card", create)
+        _, created = self.request("POST", "/card", definition)
         LOG.info("card %s created (id %s)", name, created["id"])
         return int(created["id"])
 
     def dashboard(self) -> dict[str, Any]:
-        _, dashboards = self.request("GET", "/search?q=&models=dashboard&limit=200")
-        for dashboard in dashboards.get("data", []):
+        for dashboard in self.search("dashboard"):
             if dashboard.get("name") == DASHBOARD_NAME:
                 LOG.info("dashboard %s already exists (id %s)", DASHBOARD_NAME, dashboard["id"])
                 return dashboard
@@ -192,7 +200,7 @@ def main(dry_run: bool) -> int:
     card_ids: dict[str, int] = {}
     for name, sql_file, display, _row, _col, _x, _y in CARDS:
         sql = (SQL_DIR / sql_file).read_text(encoding="utf-8")
-        card_ids[name] = client.card_id(
+        card_ids[name] = client.ensure_card(
             name,
             {
                 "name": name,
