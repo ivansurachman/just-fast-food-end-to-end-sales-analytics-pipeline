@@ -34,12 +34,30 @@ Task specs live in `tasks/`. Work on one task at a time, in order, only the one 
 
 ## Commands
 
-Generator (run from `generator/`):
+Tests run in three environments; each has exactly one supported command list, and the containers are
+not one of them (they run the pipeline, they do not carry pytest).
 
-    pip install -c constraints.txt -e ".[dev,s3test]"
-    pytest
-    ruff check . && ruff format --check .
-    mypy src tests
+Pipeline code, from the repo root with the host virtualenv:
+
+    python -m pip install -r requirements-dev.txt
+    python -m ruff check .
+    python -m ruff format --check .
+    python -m mypy
+    python -m pytest -q
+
+The SeaweedFS cases skip unless `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `JFF_S3_ENDPOINT` are exported.
+Pins: `pipelines/constraints.txt`.
+
+Generator, from `generator/`:
+
+    python -m pip install -c constraints.txt -c constraints-dev.txt -e ".[dev,s3test]"
+    python -m pytest -q
+    python -m ruff check . && python -m ruff format --check .
+    python -m mypy src tests
+
+Pins: `generator/constraints.txt` (runtime) and `generator/constraints-dev.txt` (tools).
+
+CI runs both sets: `.github/workflows/ci.yml`.
 
 Clean code applies to all code: small flat functions, clear names, type hints, docstrings, no dead code.
 
