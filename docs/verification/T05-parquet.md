@@ -51,8 +51,9 @@ distinct dates 47 2026-09-30 2026-11-15
 ```
 
 Per table: 46 demo days plus 2026-09-30. The filer shows the same tree:
-`http://127.0.0.1:8888/buckets/jff-lake/` returns 200 and `/buckets/jff-lake/silver/` lists
-`silver_orders` and `silver_order_items`.
+`http://127.0.0.1:8888/buckets/jff-lake/` returns 200, `/buckets/jff-lake/silver/` lists
+`silver_orders` and `silver_order_items`, and `/buckets/jff-lake/gold/` lists `fact_order` and
+`fact_order_item`.
 
 Verdict: **pass** (47 objects per table, one per day, from DAG runs).
 
@@ -127,7 +128,8 @@ python -m pipelines.publish_parquet --ds 2026-09-15 --lookback-days 0
 INFO silver_orders 2026-09-15: no rows, deleted the stale object
 INFO published {'silver_orders': 0, 'silver_order_items': 0, 'fact_order': 0, 'fact_order_item': 0}
 head_object -> gone (HTTP 404)
-objects in the lake -> 184 (at that time, nothing else changed)
+objects in the lake -> 184 (this live case ran before the DAG backfill of item 1; at that time the lake
+was the 46-day CLI publish, 46 x 4 = 184. After the backfill it is 188 and nothing else changed)
 ```
 
 Test (`test_seaweedfs_empty_partition_deletes_the_object`): writes a stale object under

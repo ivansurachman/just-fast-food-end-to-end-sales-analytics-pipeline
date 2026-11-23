@@ -56,7 +56,7 @@ with a comment on why 2026-09-30 is excluded (it only holds the delayed orders t
 
 `dashboards/setup.py` changed from "create if missing" to `ensure_card`, which **updates the query of
 an existing card** with `PUT /api/card/{id}`; the docstring says so. Re-running the script against the
-running Metabase:
+running Metabase after that fix (`b51629a`, which sends only the fields the script owns):
 
 ```
 INFO database JFF analytics already exists (id 2)
@@ -65,7 +65,13 @@ INFO card Orders by channel updated (id 41)
 INFO card Top 10 branches by net sales updated (id 42)
 INFO dashboard Sales overview already exists (id 2)
 INFO dashboard Sales overview (id 2) has 3 cards
+dashboard_url=http://localhost:3000/dashboard/2
 ```
+
+The update no longer overwrites settings made in the UI. Proof: `PUT /api/card/41` set
+`{"graph.show_values":true,"card.title":"Orders by channel (UI edit)"}`, the script was run, and the
+card came back with the same `visualization_settings`; card 40 still had the repository SQL
+(`... where order_date >= date '2026-10-01'`). The marker setting was reset to `{}` afterwards.
 
 Card 40 through the API (`POST /api/card/40/query`):
 
