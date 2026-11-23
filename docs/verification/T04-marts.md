@@ -606,11 +606,12 @@ rows being copied).
 
 Done. Ivan opened **http://localhost:3000/dashboard/2** ("Sales overview", cards "Net sales per day",
 "Orders by channel", "Top 10 branches by net sales") and saved the screenshot at
-`docs/slides/img/dashboard-sales-overview.png`:
+`docs/slides/img/dashboard-sales-overview.png`.
 
-```
-1917 x 1078 PNG, 228.2 KB, saved 2026-11-21 21:05
-```
+The file was retaken in T04b after the "Net sales per day" card started filtering from 2026-10-01:
+`1056 x 714 PNG`, 50.3 KB, captured with the in-app browser in its Review pane (narrow layout), while
+the first capture was 1917 x 1078 from Ivan's own window. See `docs/verification/T04b-fixes.md`
+section 6.
 
 The file is committed with this report, so the slide deck can use it directly and the evidence stays
 in the repository.

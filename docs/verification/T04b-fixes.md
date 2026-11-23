@@ -183,6 +183,26 @@ So a truly absent master now takes about 2.7 minutes to fail (5 x the 30 s conne
 retries) instead of failing instantly. That is the cost of the retry and it only happens when
 SeaweedFS never comes up.
 
+## 6. Dashboard screenshot refreshed (follow-up of item 2)
+
+Item 2 changed the "Net sales per day" card (46 points, starting 2026-10-01), so Ivan's screenshot from
+T04 was out of date. It was retaken with the in-app browser (allowed by Ivan for screenshots only) and
+replaced at `docs/slides/img/dashboard-sales-overview.png`:
+
+```
+1056 x 714 PNG, 50.3 KB, cropped to the dashboard content
+header "Sales overview", Net sales per day (October 1 to November 12 on the axis, no 2026-09-30),
+Orders by channel, Top 10 branches by net sales (10 rows)
+```
+
+The in-app browser renders in its Review pane (1056 x 886), so the layout is the narrow/stacked one
+rather than the wide layout of the old 1917 x 1078 capture; the content is complete and the chart
+starts at the demo window.
+
+To log in without putting the admin password in the transcript, a temporary Metabase user
+`screenshot@justfastfood.local` was created for the session and **deleted afterwards** (the user list
+now holds only `admin@justfastfood.local`). The browser tab was closed.
+
 ## Checks
 
 ```
