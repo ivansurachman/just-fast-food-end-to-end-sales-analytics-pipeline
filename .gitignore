@@ -13,7 +13,11 @@ venv/
 .ruff_cache/
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+build/
+dist/
 
 # Generated data. Only sample-data/ is tracked.
 /data/
@@ -36,7 +40,14 @@ logs/
 # Airflow runtime (the repo keeps dags/ only)
 airflow.cfg
 airflow.db
+airflow-webserver.pid
+webserver_config.py
+simple_auth_manager_passwords.json.generated
 standalone_admin_password.txt
+*.log
+
+# Metabase's embedded H2 database, only from a local run: the stack gives it Postgres.
+metabase.db*
 
 # Tool output and local tool state
 graphify-out/
@@ -50,3 +61,4 @@ graphify-out/
 .idea/
 .DS_Store
 Thumbs.db
+desktop.ini
