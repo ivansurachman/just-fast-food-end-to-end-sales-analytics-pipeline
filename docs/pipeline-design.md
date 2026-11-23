@@ -249,4 +249,5 @@ to this table instead of repeating a number, so moving the window is one edit.
 
 The window is bounded by the DAG's `start_date` and `end_date` (`dags/jff_daily.py`). Moving it means
 generating the new days, changing those two dates and re-running the backfill; no other file hardcodes
-a count.
+a count. Moving the **start** also means replacing the `order_date >= date '2026-10-01'` filter that
+every card carries; the proper fix (a Metabase date parameter) is on the later list.
