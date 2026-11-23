@@ -136,7 +136,8 @@ Verdict: **pass**, with four manual steps beyond the README (see the last sectio
 4. **Python first.** The very first step needs a Python on PATH (`python tools/gen_env.py`); the README
    started at `pip`.
 
-All four are now in `README.md` and `AGENTS.md`.
+All four are now in `README.md` (the "First run from a fresh clone" section). `AGENTS.md` carries the
+supported test commands per environment, not the clean-room steps.
 
 ### Teardown and restore
 
@@ -206,6 +207,16 @@ Verdict for the clean-room and the teardown: **pass**.
 
 ```
 python tools/check_secrets.py
+clean  POSTGRES_PASSWORD
+clean  POSTGRES_AIRFLOW_PASSWORD
+clean  POSTGRES_METABASE_PASSWORD
+clean  POSTGRES_ANALYTICS_PASSWORD
+clean  POSTGRES_ANALYTICS_RO_PASSWORD
+clean  S3_ACCESS_KEY
+clean  S3_SECRET_KEY
+clean  AIRFLOW_ADMIN_PASSWORD
+clean  AIRFLOW_FERNET_KEY
+clean  AIRFLOW_API_SECRET_KEY
 clean  AIRFLOW_API_AUTH_JWT_SECRET
 clean  MB_ADMIN_PASSWORD
 skipped (name does not look like a credential): AWS_DEFAULT_REGION, AIRFLOW_ADMIN_EMAIL, MB_ADMIN_EMAIL, MB_SITE_NAME
@@ -321,3 +332,31 @@ Verdict: **pass**.
 - **Two runs of the clean-room were needed** because of the missing dimensions; the failed attempt is
   reported above rather than hidden, and the second one is the evidence.
 - Not run: GitHub CI (item 5), and no image tag was moved (item 4).
+
+## 8. Counts behind section 14 of the design
+
+`docs/pipeline-design.md` section 14 carries the window numbers. They were measured again on the
+restored stack after 2026-11-17 had been processed, with the same script the earlier tasks used
+(DuckDB read-only, boto3 listing of `jff-lake`, and `psql` as `analytics`):
+
+```
+podman exec jff_airflow-scheduler_1 python /tmp/t07_numbers.py
+orders           574838
+order lines      1399537
+fact_branch_day  5760
+sales mart days  49
+max order date   2026-11-17
+lake objects     196 bytes 29136488
+lake dates       49 2026-09-30 2026-11-17
+per table        {'gold/fact_order': 49, 'gold/fact_order_item': 49, 'silver/silver_order_items': 49, 'silver/silver_orders': 49}
+
+psql -U analytics -d analytics -tAc "select count(*), count(distinct order_date), max(order_date)
+                                      from mart_sales_day_branch_channel;
+                                      select count(*) from mart_branch_coverage"
+27410|49|2026-11-17
+5760
+```
+
+The dashboard shows 48 of the 49 dates because every card filters `order_date >= date '2026-10-01'`;
+2026-09-30 is the late-arrival partition. 5760 = 48 x 120 and 196 = 49 x 4.
+
