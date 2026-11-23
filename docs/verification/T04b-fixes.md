@@ -83,9 +83,15 @@ Verdict: **pass**.
 
 ## 3. Window wording
 
-`git grep -n "45 days|45 hari" -- docs README.md AGENTS.md` before and after.
+Two searches were used, because the wording I had to change appears in both forms:
 
-Before, the four statements that describe the **demo window**:
+```
+git grep -n -E "45 days|45 hari" -- docs README.md AGENTS.md
+git grep -n -E "45" -- docs/pipeline-design.md      # to catch the "45-day" hyphenated forms
+```
+
+Before, the four statements that describe the **demo window** (the two hyphenated ones come from the
+second command):
 
 ```
 docs/pipeline-design.md:96:  ... wasteful at 45 days (about 500 partition writes) ...
@@ -213,7 +219,8 @@ python -m pytest -q                -> 14 passed (with S3_* exported)
 docker-compose -f compose.yaml config --quiet -> exit 0
 ```
 
-Not run: the `browser` skill was not used and no screenshots were taken.
+Not run: no browser page other than the dashboard was opened, and no screenshot of anything else was
+taken; the screenshot itself is recorded in section 6.
 
 ## Not run / notes
 
