@@ -1,8 +1,8 @@
-"""Set up Metabase through its REST API: admin account, analytics connection, cards, dashboard.
+"""Set up the Metabase pages through its REST API: admin account, connection, cards, dashboards.
 
-Idempotent and *updating*: on a database that is already set up it logs in, then reuses the
-connection, **replaces the SQL of the three questions** with the files in `sales_overview/` and
-rewrites the dashboard cards, so changing a `.sql` file and re-running this script is enough.
+Idempotent and *updating*: on a database that is already set up it logs in, reuses the connection,
+**replaces the SQL of every question** with the files next to this script and rewrites each page's
+cards, so changing a `.sql` file and re-running this script is enough.
 
     python dashboards/setup.py            # from the repo root, with the stack up
     python dashboards/setup.py --dry-run  # print what it would do
@@ -21,20 +21,97 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
 LOG = logging.getLogger("setup_metabase")
 
 BASE_URL: Final = "http://localhost:3000"
-SQL_DIR: Final = Path(__file__).parent / "sales_overview"
-DASHBOARD_NAME: Final = "Sales overview"
+DASHBOARD_HOME: Final = Path(__file__).parent
 DATABASE_NAME: Final = "JFF analytics"
-# name, SQL file, display, grid row, grid column, width, height
-CARDS: Final = (
-    ("Net sales per day", "net_sales_per_day.sql", "line", 0, 0, 24, 6),
-    ("Orders by channel", "orders_by_channel.sql", "bar", 6, 0, 12, 6),
-    ("Top 10 branches by net sales", "top_branches_by_net_sales.sql", "table", 6, 12, 12, 6),
+
+
+@dataclass(frozen=True)
+class CardSpec:
+    """One question: its name, its SQL file under the page folder, and where it sits on the page."""
+
+    name: str
+    sql_file: str
+    display: str
+    row: int
+    col: int
+    size_x: int = 12
+    size_y: int = 6
+
+
+@dataclass(frozen=True)
+class PageSpec:
+    """One dashboard page and its cards."""
+
+    name: str
+    folder: str
+    description: str
+    cards: tuple[CardSpec, ...]
+
+
+PAGES: Final = (
+    PageSpec(
+        name="Sales overview",
+        folder="sales_overview",
+        description="Net sales, orders, order value, cancellation and refund rates, channels.",
+        cards=(
+            CardSpec("Net sales per day", "net_sales_per_day.sql", "line", 0, 0, 24),
+            CardSpec("Completed orders", "completed_orders.sql", "bar", 6, 0),
+            CardSpec("Average order value", "average_order_value.sql", "line", 6, 12),
+            CardSpec("Cancellation rate", "cancellation_rate.sql", "line", 12, 0),
+            CardSpec("Refund rate", "refund_rate.sql", "line", 12, 12),
+            CardSpec("Orders by channel", "orders_by_channel.sql", "bar", 18, 0),
+            CardSpec(
+                "Top 10 branches by net sales", "top_branches_by_net_sales.sql", "table", 18, 12
+            ),
+        ),
+    ),
+    PageSpec(
+        name="Channel and branch",
+        folder="channel_branch",
+        description="Net sales mix, contribution margin and net sales per branch-day.",
+        cards=(
+            CardSpec("Net sales by channel", "net_sales_by_channel.sql", "bar", 0, 0),
+            CardSpec(
+                "Channel contribution margin", "channel_contribution_margin.sql", "table", 0, 12
+            ),
+            CardSpec("Net sales per branch-day", "net_sales_per_branch_day.sql", "table", 6, 0, 24),
+        ),
+    ),
+    PageSpec(
+        name="Operations",
+        folder="operations",
+        description="Order volume by hour and weekday, peak-hour load, branch reporting coverage.",
+        cards=(
+            CardSpec("Orders by hour and weekday", "orders_by_hour.sql", "line", 0, 0, 24),
+            CardSpec("Peak-hour load per branch", "peak_hour_load.sql", "table", 6, 0),
+            CardSpec("Branch reporting coverage", "branch_reporting_coverage.sql", "line", 6, 12),
+        ),
+    ),
+    PageSpec(
+        name="Menu",
+        folder="menu",
+        description="Item sales mix and item gross margin.",
+        cards=(
+            CardSpec("Item sales mix", "item_sales_mix.sql", "bar", 0, 0),
+            CardSpec("Item gross margin", "item_gross_margin.sql", "table", 0, 12),
+        ),
+    ),
+    PageSpec(
+        name="Promo",
+        folder="promo",
+        description="Discount rate by promotion and the average order value lift against no promo.",
+        cards=(
+            CardSpec("Discount rate by promo", "discount_rate_by_promo.sql", "bar", 0, 0),
+            CardSpec("Promo AOV lift", "promo_aov_lift.sql", "table", 0, 12),
+        ),
+    ),
 )
 
 
@@ -73,8 +150,7 @@ class Metabase:
                 return response.status, json.loads(body) if body else None
         except urllib.error.HTTPError as error:
             body = error.read().decode()
-            detail = body[:500]
-            raise RuntimeError(f"{method} {path} -> {error.code}: {detail}") from error
+            raise RuntimeError(f"{method} {path} -> {error.code}: {body[:500]}") from error
 
     def wait_healthy(self, timeout_s: int = 300) -> None:
         deadline = time.monotonic() + timeout_s
@@ -150,18 +226,60 @@ class Metabase:
         LOG.info("card %s created (id %s)", name, created["id"])
         return int(created["id"])
 
-    def dashboard(self) -> dict[str, Any]:
+    def ensure_dashboard(self, page: PageSpec) -> dict[str, Any]:
         for dashboard in self.search("dashboard"):
-            if dashboard.get("name") == DASHBOARD_NAME:
-                LOG.info("dashboard %s already exists (id %s)", DASHBOARD_NAME, dashboard["id"])
+            if dashboard.get("name") == page.name:
+                LOG.info("dashboard %s already exists (id %s)", page.name, dashboard["id"])
                 return dashboard
         _, created = self.request(
-            "POST",
-            "/dashboard",
-            {"name": DASHBOARD_NAME, "description": "Net sales, channel mix and top branches."},
+            "POST", "/dashboard", {"name": page.name, "description": page.description}
         )
-        LOG.info("dashboard %s created (id %s)", DASHBOARD_NAME, created["id"])
+        LOG.info("dashboard %s created (id %s)", page.name, created["id"])
         return created
+
+
+def card_definition(page: PageSpec, card: CardSpec, database_id: int) -> dict[str, Any]:
+    """The Metabase payload of one card, with the SQL read from its file."""
+    sql = (DASHBOARD_HOME / page.folder / card.sql_file).read_text(encoding="utf-8")
+    return {
+        "name": card.name,
+        "description": f"{page.name}: {card.sql_file}",
+        "display": card.display,
+        "visualization_settings": {},
+        "dataset_query": {
+            "database": database_id,
+            "type": "native",
+            "native": {"query": sql, "template-tags": {}},
+        },
+    }
+
+
+def setup_pages(client: Metabase, database_id: int) -> list[tuple[str, int, int]]:
+    """Create or update every page; returns (page name, dashboard id, card count)."""
+    pages: list[tuple[str, int, int]] = []
+    for page in PAGES:
+        card_ids = [
+            client.ensure_card(card.name, card_definition(page, card, database_id))
+            for card in page.cards
+        ]
+        dashboard = client.ensure_dashboard(page)
+        dashcards = [
+            {
+                "id": -index,
+                "card_id": card_id,
+                "row": card.row,
+                "col": card.col,
+                "size_x": card.size_x,
+                "size_y": card.size_y,
+                "parameter_mappings": [],
+                "visualization_settings": {},
+            }
+            for index, (card, card_id) in enumerate(zip(page.cards, card_ids, strict=True), start=1)
+        ]
+        client.request("PUT", f"/dashboard/{dashboard['id']}", {"dashcards": dashcards})
+        LOG.info("dashboard %s (id %s) has %d cards", page.name, dashboard["id"], len(dashcards))
+        pages.append((page.name, int(dashboard["id"]), len(dashcards)))
+    return pages
 
 
 def main(dry_run: bool) -> int:
@@ -174,7 +292,7 @@ def main(dry_run: bool) -> int:
     client = Metabase()
     client.wait_healthy()
     if dry_run:
-        LOG.info("healthy at %s, would set up %s", BASE_URL, DASHBOARD_NAME)
+        LOG.info("healthy at %s, would set up %d pages", BASE_URL, len(PAGES))
         return 0
 
     token = client.setup_token()
@@ -203,47 +321,8 @@ def main(dry_run: bool) -> int:
         },
     )
 
-    card_ids: dict[str, int] = {}
-    for name, sql_file, display, _row, _col, _x, _y in CARDS:
-        sql = (SQL_DIR / sql_file).read_text(encoding="utf-8")
-        card_ids[name] = client.ensure_card(
-            name,
-            {
-                "name": name,
-                "description": sql_file,
-                "display": display,
-                "visualization_settings": {},
-                "dataset_query": {
-                    "database": database_id,
-                    "type": "native",
-                    "native": {"query": sql, "template-tags": {}},
-                },
-            },
-        )
-
-    dashboard = client.dashboard()
-    dashcards = [
-        {
-            "id": -index,
-            "card_id": card_ids[name],
-            "row": row,
-            "col": col,
-            "size_x": size_x,
-            "size_y": size_y,
-            "parameter_mappings": [],
-            "visualization_settings": {},
-        }
-        for index, (name, _sql, _display, row, col, size_x, size_y) in enumerate(CARDS, start=1)
-    ]
-    client.request("PUT", f"/dashboard/{dashboard['id']}", {"dashcards": dashcards})
-    LOG.info(
-        "dashboard %s (id %s) has %d cards",
-        DASHBOARD_NAME,
-        dashboard["id"],
-        len(dashcards),
-    )
-    print(f"dashboard_url={BASE_URL}/dashboard/{dashboard['id']}")
-    print("cards=" + ", ".join(f"{name} (id {card_ids[name]})" for name, *_ in CARDS))
+    for name, dashboard_id, cards in setup_pages(client, database_id):
+        print(f"{name}: {BASE_URL}/dashboard/{dashboard_id} ({cards} cards)")
     return 0
 
 
