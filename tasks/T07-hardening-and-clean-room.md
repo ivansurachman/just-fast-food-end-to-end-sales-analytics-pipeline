@@ -19,6 +19,7 @@ Branch: `task/T07-hardening` (from `main`). Serves "deployment best practices" a
 4. **Image scan.** Scan the images used (Postgres, SeaweedFS, Metabase, the Airflow image) with Trivy (run it as a container; verify the image and pin it). Report HIGH and CRITICAL counts per image. Do not change image versions in this task; record and let Ivan decide.
 5. CI passes on GitHub (Ivan confirms the run result; report the run URL or say "not run").
 6. `no-new-privileges` applied and the stack is healthy, or the evidence that `podman-compose` rejects it.
+7. **Demo-safe way to run one day.** T06 found that `airflow dags trigger --logical-date` creates a run with no task instances that the scheduler marks successful in milliseconds, while `airflow backfill create` runs all tasks. Test what the Airflow UI "Trigger" button does for a new day (generate 2026-11-17 first). Write the exact working procedure for running one new day (generate, then the command or UI path that really runs the tasks, then how to see the result on the dashboard) into `README.md` and `docs/demo-script.md`, and state which path does not work. Evidence: task states from the run you used.
 
 ## Rules
 
