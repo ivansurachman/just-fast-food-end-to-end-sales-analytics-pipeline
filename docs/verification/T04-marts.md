@@ -157,7 +157,7 @@ out - so the full identity is shown for all of them instead:
 The duplicates in the manifest are already gone before the mart: `distinct` counts the CSV by
 `order_id`, which is exactly the dedup silver does. On a day with no late orders in or out the
 identity reduces to `mart_total = distinct`, which is the equality the task describes. Part C checks
-that form on the 45-day range if such a day exists there.
+that form on the full demo range if such a day exists there.
 
 Verdict: **pass**, with the reason no single clean day exists in the sample.
 
@@ -176,7 +176,7 @@ orphan_rows=740
 At this point bronze still holds the T03 full-scale day (`dt=2026-10-20`), whose 919 refunds point at
 orders from 2026-10-12 to 2026-10-20, and the seven-day database has only the orders of those two
 days. The 30 rows for 2026-09-27..2026-10-02 are the T03 finding: 16 of them (10-01 and 10-02) are
-resolved as soon as those days exist. Part C re-measures this on the 45-day dataset, where the
+resolved as soon as those days exist. Part C re-measures this on the full demo dataset, where the
 expected number is the 6 rows for 2026-09-27..2026-09-30.
 
 Not a bug: a change whose order has not been ingested yet cannot be attributed to a partition.

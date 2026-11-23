@@ -32,10 +32,14 @@ Hard budget: stack limits sum to **5.6 GB**. The target was a 9 GB WSL2 cap via 
 | postgres | Airflow metadata, Metabase app DB, `analytics` marts (one instance, three databases) | 0.45 GB | 0.6 GB |
 | seaweedfs | S3 API, single node | 0.5 GB | 0.6 GB |
 | airflow-scheduler | Scheduler and task execution (LocalExecutor), runs DuckDB | 1.4 GB | 1.7 GB |
-| airflow-api-server | UI and API | 0.6 GB | 0.8 GB |
+| airflow-api-server | UI and API | 0.3 GB | 0.6 GB |
 | airflow-dag-processor | DAG parsing (Airflow 3 only) | 0.4 GB | 0.5 GB |
-| metabase | JVM with `-Xmx` capped | 1.0 GB | 1.4 GB |
-| **Total** | | **~4.4 GB** | **5.6 GB** |
+| metabase | JVM with `-Xmx768m` | 1.35 GB | 1.6 GB |
+| **Total** | | **~4.6 GB** | **5.6 GB** |
+
+The api-server and Metabase limits were rebalanced on 23 Nov after the T04 measurements: the
+api-server used 262 MB of its 800 MB while Metabase sat at 95% of 1400 MB (1.34 GB, nearly all of it
+anonymous memory). The 200 MB moved from one to the other and the 5.6 GB total did not change.
 
 Rules that keep the budget real:
 
@@ -89,7 +93,7 @@ Schedule: daily, `ds` = the generator file date. Tasks:
 
 Dimensions load as a separate small DAG task group at the start of the first run (full refresh, tiny tables).
 
-Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at 45 days (about 500 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
+Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at 46 days (about 500 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
 
 ## 6. Reprocessing window
 
@@ -166,7 +170,7 @@ Marts keep numerators and denominators, never finished ratios, so Metabase canno
 | `mart_branch_coverage` | date, branch | M17 | P1 |
 | P2 marts | | M5, M9, M11, M13, M14, M16, M18 | P2 |
 
-Row counts at 45 days, scale 0.1, are in the tens of thousands per mart (**est.**, measured on 21 Nov). Index on `order_date` for every mart. Metabase app database is a separate Postgres database, not H2.
+Row counts at 46 days (2026-10-01 to 2026-11-15), scale 0.1, are in the tens of thousands per mart (**est.**, measured on 21 Nov). Index on `order_date` for every mart. Metabase app database is a separate Postgres database, not H2.
 
 `load_marts` uses `psycopg` with `COPY` from a DuckDB Arrow result. The DuckDB `postgres` extension is the alternative; it needs an extension download at runtime (**verify**), so it is not the default.
 
@@ -195,9 +199,9 @@ Generator to S3 needs one code change first: a `--s3-endpoint` option and path-s
 | 17 | This document approved. **Smoke test on Windows now** (section 12) | Approval given; smoke test results recorded |
 | 18 | Compose up (postgres, seaweedfs, airflow), memory measured, `jff-gen` writes to S3 | `podman stats` table filled; one day visible in `jff-raw` |
 | 19 | `ingest_bronze`, `check_bronze`, DAG skeleton | Backfill of 3 days gives identical bronze on re-run |
-| 20 | dbt silver and gold, tests | `dbt test` green on the 45-day window |
+| 20 | dbt silver and gold, tests | `dbt test` green on the 46-day window (2026-10-01 to 2026-11-15) |
 | 21 | `load_marts`, Metabase connected, 3 P1 pages | Three pages render from Postgres |
-| 22 | Full 45-day backfill, run end to end, demo rehearsal | One clean daily run from sensor to dashboard |
+| 22 | Full 46-day backfill (2026-10-01 to 2026-11-15), run end to end, demo rehearsal | One clean daily run from sensor to dashboard |
 
 **Go/no-go on the evening of 18 Nov.** If Airflow does not start inside its memory limit, switch to Airflow 2.11.x. If memory limits are not enforced, record that and continue; do not spend a day on cgroup configuration.
 
