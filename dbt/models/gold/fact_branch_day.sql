@@ -11,26 +11,27 @@
     unique_key='date_key'
 ) }}
 
-with bounds as (
+with first_file_day as (
 
-    select
-        min(cast(order_ts_local as date)) as first_day,
-        max(cast(order_ts_local as date)) as last_day
-    from {{ ref('fact_order') }}
+    -- The first day the generator produced a file. Days before it are not pipeline days: the orders
+    -- of 2026-09-30 arrived in the 2026-10-01 file, and no file of their own exists to be covered.
+    select min(source_file_date) as day from {{ ref('fact_order') }}
 
 ),
 
--- The spine is the run's window, not all of history: a branch-day is only "expected" for a day the
--- pipeline processes. That keeps 2026-09-30 (late arrivals of the 2026-10-01 file, no file of its
--- own) out of the coverage numbers.
+-- The spine is the run's window, clamped at the first file date: a branch-day is only "expected"
+-- for a day the pipeline was supposed to receive. That keeps 2026-09-30 out of the coverage numbers
+-- and makes the missing branch-days equal the branches the generator dropped.
 days as (
 
-    select day
-    from (
-        select cast(unnest(generate_series(first_day, last_day, interval 1 day)) as date) as day
-        from bounds
-    )
-    where day between {{ window_start_sql() }} and {{ run_date_sql() }}
+    select cast(day as date) as day
+    from unnest(
+        generate_series(
+            greatest(cast({{ window_start_sql() }} as date), (select day from first_file_day)),
+            cast({{ run_date_sql() }} as date),
+            interval 1 day
+        )
+    ) as t(day)
 
 ),
 
