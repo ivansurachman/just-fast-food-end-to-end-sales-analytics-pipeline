@@ -4,10 +4,10 @@ One run per generator file date (`ds`), `catchup=True` so a backfill is one run 
 `max_active_runs=1` because DuckDB allows a single writer (docs/pipeline-design.md section 4).
 The tasks that touch DuckDB take the one slot of the `duckdb_writer` pool.
 
-The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-16 are the 47-day demo window
-(design section 14), so unpausing it can only ever create those 47 runs. `wait_manifest` gives up
+The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-17 are the 48-day demo window
+(design section 14), so unpausing it can only ever create those 48 runs. `wait_manifest` gives up
 after two hours, so a day the generator never wrote fails loudly instead of waiting forever. The
-last day is what makes 2026-11-15 final: its late orders arrive in the file of 2026-11-16.
+last day is what makes 2026-11-16 final: its late orders arrive in the file of 2026-11-17.
 
 `load_marts` copies the mart window from DuckDB into PostgreSQL and `publish_parquet` mirrors the
 silver and gold tables into the lake, one Parquet object per table and order date.
@@ -67,10 +67,10 @@ def manifest_ready(ds: str) -> bool:
     dag_id="jff_daily",
     schedule="@daily",
     start_date=datetime(2026, 10, 1),
-    # 47 days, one run per generator file date from 2026-10-01 to 2026-11-16. The end date must stay
-    # one day past the last day the dashboard should show as final: a day's late orders and refunds
-    # arrive in the next day's file.
-    end_date=datetime(2026, 11, 16),
+    # 48 days, one run per generator file date from 2026-10-01 to 2026-11-17. The end date must stay
+    # at least one day past the last day the dashboard should show as final: a day's late orders and
+    # refunds arrive in the next day's file.
+    end_date=datetime(2026, 11, 17),
     catchup=True,
     max_active_runs=1,
     default_args={"owner": "jff", "retries": 1, "retry_delay": 300},

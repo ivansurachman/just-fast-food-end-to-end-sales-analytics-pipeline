@@ -93,7 +93,7 @@ Schedule: daily, `ds` = the generator file date. Tasks:
 
 Dimensions load as a separate small DAG task group at the start of the first run (full refresh, tiny tables).
 
-Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at the 47 demo days (about 520 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
+Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at the 48 demo days (about 530 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
 
 ## 6. Reprocessing window
 
@@ -203,7 +203,7 @@ Generator to S3 needs one code change first: a `--s3-endpoint` option and path-s
 | 21 | `load_marts`, Metabase connected, 3 P1 pages | Three pages render from Postgres |
 | 22 | Full backfill of the demo window, run end to end, demo rehearsal | One clean daily run from sensor to dashboard |
 
-The window these rows call "the demo window" was 45 days when the plan was written; it is 47 now. The
+The window these rows call "the demo window" was 45 days when the plan was written; it is 48 now. The
 numbers live only in section 14.
 
 **Go/no-go on the evening of 18 Nov.** If Airflow does not start inside its memory limit, switch to Airflow 2.11.x. If memory limits are not enforced, record that and continue; do not spend a day on cgroup configuration.
@@ -230,7 +230,7 @@ Iceberg, ClickHouse, monitoring tooling, Telegram alerting, platform settlement 
 | D2 | Reprocessing window | Fixed 10 days plus guard test |
 | D3 | Airflow line | 3.x pinned to an exact patch tag older than two weeks (**verify** tag on 18 Nov), fall back to 2.11.x |
 | D4 | Postgres layout | One instance, three databases |
-| D5 | Demo dataset | 47 days at scale 0.1 (2026-10-01 to 2026-11-16), one run per generator file date; the counts are in section 14; one full-scale day only to measure RAM. The last day is what finalises the day before it, because a day's late orders and refunds arrive in the next file. The 47th day was added on 23 Nov for the "one new day" acceptance of T06 |
+| D5 | Demo dataset | 48 days at scale 0.1 (2026-10-01 to 2026-11-17), one run per generator file date; the counts are in section 14; one full-scale day only to measure RAM. The last day is what finalises the day before it, because a day's late orders and refunds arrive in the next file. The 47th and 48th days were added on 23 Nov for the "one new day" acceptance of T06 and the demo-procedure test of T07 |
 | D6 | Generator inside Airflow | Defer; CLI for 22 Nov |
 
 ## 14. Demo dataset (single source of truth)
@@ -240,12 +240,12 @@ to this table instead of repeating a number, so moving the window is one edit.
 
 | Quantity | Value |
 |---|---|
-| Days on the dashboard (the cards filter `order_date >= 2026-10-01`) | **47**, 2026-10-01 to 2026-11-16 |
-| Dates in the lake, per table | **48**, 2026-09-30 to 2026-11-16 (the extra date holds the late orders that arrived in the 2026-10-01 file) |
-| Rows in `fact_branch_day` | **5640** (47 days x 120 branches) |
-| Objects in `jff-lake` (silver + gold) | **192** (48 dates x 4 tables) |
-| Orders (`fact_order` and `silver_orders`) | **563599** |
-| Order lines (`fact_order_item` and `silver_order_items`) | **1372125** |
+| Days on the dashboard (the cards filter `order_date >= 2026-10-01`) | **48**, 2026-10-01 to 2026-11-17 |
+| Dates in the lake, per table | **49**, 2026-09-30 to 2026-11-17 (the extra date holds the late orders that arrived in the 2026-10-01 file) |
+| Rows in `fact_branch_day` | **5760** (48 days x 120 branches) |
+| Objects in `jff-lake` (silver + gold) | **196** (49 dates x 4 tables) |
+| Orders (`fact_order` and `silver_orders`) | **574838** |
+| Order lines (`fact_order_item` and `silver_order_items`) | **1399537** |
 
 The window is bounded by the DAG's `start_date` and `end_date` (`dags/jff_daily.py`). Moving it means
 generating the new days, changing those two dates and re-running the backfill; no other file hardcodes
