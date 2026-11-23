@@ -149,7 +149,9 @@ services:
 
   airflow-api-server:
     <<: *airflow-common
-    mem_limit: 800m
+    # Rebalanced after T04: measured at 262 MB, so 600m is enough and the 200 MB goes to Metabase,
+    # which ran at 95% of its 1400m limit.
+    mem_limit: 600m
     restart: unless-stopped
     # podman-compose 1.6.0 ignores the depends_on completion condition, so the wait script
     # gates every long-running service on the migrated schema.
@@ -203,7 +205,9 @@ services:
 
   metabase:
     image: docker.io/metabase/metabase:v0.65.3
-    mem_limit: 1400m
+    # 1600m after the T04 review: 1400m left about 60 MB of headroom while the JVM sat at 95%.
+    # The 200 MB comes from the api-server, so the long-running total stays 5600 MB.
+    mem_limit: 1600m
     restart: unless-stopped
     environment:
       # Application database: the metabase database on the compose Postgres (created by
