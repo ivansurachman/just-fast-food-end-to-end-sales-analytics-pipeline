@@ -8,6 +8,7 @@ from typing import Any
 
 import duckdb
 import pytest
+from botocore.exceptions import ClientError
 
 from pipelines import publish_parquet
 
@@ -106,6 +107,16 @@ def test_delete_object_reports_whether_something_was_there(tmp_path: Path) -> No
     assert publish_parquet.delete_object(present.as_posix(), None) is False
 
 
+def _delete_prefix(client: Any, *, bucket: str, prefix: str) -> None:
+    """Remove every object under a prefix, however many listing pages it needs."""
+    while True:
+        listing = client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        keys = [{"Key": item["Key"]} for item in listing.get("Contents", [])]
+        if not keys:
+            return
+        client.delete_objects(Bucket=bucket, Delete={"Objects": keys})
+
+
 def test_seaweedfs_roundtrip(s3_endpoint: str, s3_client: Any, duckdb_file: str) -> None:
     """Publish one day to the lake, read it back, and check the object is stable on a republish."""
     lake_root = "s3://jff-lake/_test"
@@ -141,7 +152,27 @@ def test_seaweedfs_roundtrip(s3_endpoint: str, s3_client: Any, duckdb_file: str)
             s3_client.head_object(Bucket="jff-lake", Key=f"_test/{key}")["ETag"] == head["ETag"]
         ), "republishing the same day must not change the object"
     finally:
-        listing = s3_client.list_objects_v2(Bucket="jff-lake", Prefix="_test/")
-        keys = [{"Key": item["Key"]} for item in listing.get("Contents", [])]
-        if keys:
-            s3_client.delete_objects(Bucket="jff-lake", Delete={"Objects": keys})
+        _delete_prefix(s3_client, bucket="jff-lake", prefix="_test/")
+
+
+def test_seaweedfs_empty_partition_deletes_the_object(
+    s3_endpoint: str, s3_client: Any, duckdb_file: str
+) -> None:
+    """A date with no rows removes the object that is already there, on S3 as on disk."""
+    prefix = "_test_empty"
+    stale_key = "silver/silver_orders/order_date=2026-10-07/part.parquet"
+    try:
+        s3_client.put_object(Bucket="jff-lake", Key=f"{prefix}/{stale_key}", Body=b"stale")
+
+        publish_parquet.publish_window(
+            "2026-10-07",
+            lookback_days=0,
+            duckdb_path=duckdb_file,
+            lake_root=f"s3://jff-lake/{prefix}",
+            endpoint=s3_endpoint,
+        )
+
+        with pytest.raises(ClientError):
+            s3_client.head_object(Bucket="jff-lake", Key=f"{prefix}/{stale_key}")
+    finally:
+        _delete_prefix(s3_client, bucket="jff-lake", prefix=f"{prefix}/")

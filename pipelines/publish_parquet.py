@@ -56,6 +56,15 @@ TARGETS: Final = (
     Target(table="fact_order_item", layer="gold", column="date_key", is_date_key=True),
 )
 
+# A fixed row order keeps a rewritten partition as close to byte-identical as the writer allows; it
+# is not a guarantee of identical bytes, only the removal of one source of variation.
+ORDER_BY: Final = {
+    "silver_orders": "order_id",
+    "silver_order_items": "order_id, line_no",
+    "fact_order": "order_id",
+    "fact_order_item": "order_id, line_no",
+}
+
 
 def window(ds: str, lookback_days: int) -> list[date]:
     """Every order date a run for file date `ds` republishes, oldest first."""
@@ -128,8 +137,8 @@ def publish_partition(
         # DuckDB writes objects itself; for a local path it will not create the directory.
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     con.execute(
-        f"COPY (SELECT * FROM {target.table} WHERE {predicate}) TO '{path}' "
-        "(FORMAT PARQUET, COMPRESSION zstd)"
+        f"COPY (SELECT * FROM {target.table} WHERE {predicate} ORDER BY {ORDER_BY[target.table]}) "
+        f"TO '{path}' (FORMAT PARQUET, COMPRESSION zstd)"
     )
     LOG.info("%s %s: %d rows -> %s", target.table, day, rows, path)
     return rows

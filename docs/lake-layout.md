@@ -48,9 +48,13 @@ jff-lake/gold/fact_order_item/order_date=YYYY-MM-DD/part.parquet
   `fact_order_item` partition on the same day expressed as their `date_key` (`YYYYMMDD` integer), so
   the folder name is still the order date.
 - **A partition with no rows deletes its object** instead of writing an empty file, so a partition that
-  disappears from DuckDB cannot survive in the lake.
-- The window is the same 10-day window the rest of the pipeline uses (`--ds`, `--lookback-days`), so a
-  daily run republishes its last ten days and a backfill of the whole range leaves one object per day.
+  disappears from DuckDB cannot survive in the lake. The check runs for the dates the publish covers;
+  a date that drops out of DuckDB and is never republished keeps its object until it is.
+- The window is the same one the rest of the pipeline uses: `ds - 10 .. ds`, eleven dates per run
+  (`--lookback-days` changes the size). A daily run therefore republishes its last eleven days, and the
+  46 backfill runs together leave one object per day. The run for `ds = 2026-10-01` also publishes
+  `2026-09-30`, the late orders that arrived in the 10-01 file, so the completed lake has 47 dates and
+  is a full mirror of DuckDB.
 
 Reading it:
 
