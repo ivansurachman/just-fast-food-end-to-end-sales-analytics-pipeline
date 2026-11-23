@@ -1,0 +1,8 @@
+# Test and lint tools for the generator, kept out of constraints.txt because the container only needs
+# the runtime dependencies. Pin here so the host venv and CI install the same tools; every version is
+# older than 14 days (see docs/versions.md) and the commands are in README.md.
+pytest==9.2.0
+ruff==0.17.4
+mypy==2.4.1
+types-PyYAML==6.0.12.20261103
+pandas-stubs==3.1.0.261029

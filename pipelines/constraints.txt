@@ -1,0 +1,32 @@
+# Pins for the pipeline test environment: the host virtualenv and the CI runner.
+#
+# The runtime libraries are pinned to the versions of the containers that run the pipeline, read with
+# `pip freeze` inside them: duckdb 1.5.6 and psycopg 3.3.8 from /opt/venvs/dbt (the venv that runs
+# load_marts), and the boto3 set from the host venv, which carries the same boto3 as the generator.
+# The Airflow interpreter ships an older boto3 (1.43.75); the pipelines tests only use it for
+# head_object and the SeaweedFS roundtrip, so that pin is not followed here.
+#
+# pytest and the linters are host tools and are not installed in the image. Release dates are in
+# docs/versions.md; every pin below is older than 14 days.
+duckdb==1.5.6
+
+boto3==1.43.117
+botocore==1.43.127
+s3transfer==0.19.3
+jmespath==1.1.0
+python-dateutil==2.9.0.post0
+six==1.17.0
+urllib3==2.8.0
+
+psycopg==3.3.8
+psycopg-binary==3.3.8
+
+pytest==9.2.0
+pluggy==1.7.0
+iniconfig==2.3.1
+packaging==26.3
+
+ruff==0.17.4
+mypy==2.4.1
+mypy_extensions==1.2.0
+typing_extensions==4.16.0
