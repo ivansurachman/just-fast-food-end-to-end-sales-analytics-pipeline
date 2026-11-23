@@ -93,7 +93,7 @@ Schedule: daily, `ds` = the generator file date. Tasks:
 
 Dimensions load as a separate small DAG task group at the start of the first run (full refresh, tiny tables).
 
-Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at 46 days (about 500 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
+Backfill: `catchup=True`, one run per date, in order. Rewriting 11 partitions per run is wasteful at the 47 demo days (about 520 partition writes), but at scale 0.1 each partition is about 12k orders. Cheap enough, and simpler than a special backfill mode.
 
 ## 6. Reprocessing window
 
@@ -170,7 +170,7 @@ Marts keep numerators and denominators, never finished ratios, so Metabase canno
 | `mart_branch_coverage` | date, branch | M17 | P1 |
 | P2 marts | | M5, M9, M11, M13, M14, M16, M18 | P2 |
 
-Row counts at 46 days (2026-10-01 to 2026-11-15), scale 0.1, are in the tens of thousands per mart (**est.**, measured on 21 Nov). Index on `order_date` for every mart. Metabase app database is a separate Postgres database, not H2.
+Every mart has an index on `order_date`, and the window they cover is the one in section 14, at scale 0.1. Metabase app database is a separate Postgres database, not H2.
 
 `load_marts` uses `psycopg` with `COPY` from a DuckDB Arrow result. The DuckDB `postgres` extension is the alternative; it needs an extension download at runtime (**verify**), so it is not the default.
 
@@ -199,9 +199,12 @@ Generator to S3 needs one code change first: a `--s3-endpoint` option and path-s
 | 17 | This document approved. **Smoke test on Windows now** (section 12) | Approval given; smoke test results recorded |
 | 18 | Compose up (postgres, seaweedfs, airflow), memory measured, `jff-gen` writes to S3 | `podman stats` table filled; one day visible in `jff-raw` |
 | 19 | `ingest_bronze`, `check_bronze`, DAG skeleton | Backfill of 3 days gives identical bronze on re-run |
-| 20 | dbt silver and gold, tests | `dbt test` green on the 46-day window (2026-10-01 to 2026-11-15) |
+| 20 | dbt silver and gold, tests | `dbt test` green on the demo window |
 | 21 | `load_marts`, Metabase connected, 3 P1 pages | Three pages render from Postgres |
-| 22 | Full 46-day backfill (2026-10-01 to 2026-11-15), run end to end, demo rehearsal | One clean daily run from sensor to dashboard |
+| 22 | Full backfill of the demo window, run end to end, demo rehearsal | One clean daily run from sensor to dashboard |
+
+The window these rows call "the demo window" was 45 days when the plan was written; it is 47 now. The
+numbers live only in section 14.
 
 **Go/no-go on the evening of 18 Nov.** If Airflow does not start inside its memory limit, switch to Airflow 2.11.x. If memory limits are not enforced, record that and continue; do not spend a day on cgroup configuration.
 
@@ -227,5 +230,23 @@ Iceberg, ClickHouse, monitoring tooling, Telegram alerting, platform settlement 
 | D2 | Reprocessing window | Fixed 10 days plus guard test |
 | D3 | Airflow line | 3.x pinned to an exact patch tag older than two weeks (**verify** tag on 18 Nov), fall back to 2.11.x |
 | D4 | Postgres layout | One instance, three databases |
-| D5 | Demo dataset | 46 days at scale 0.1 (2026-10-01 to 2026-11-15); one full-scale day only to measure RAM. The 46th day was added on 21 Nov because a window ending at 11-14 leaves the late orders of 11-14 unprocessed forever (T04 finding) |
+| D5 | Demo dataset | 47 days at scale 0.1 (2026-10-01 to 2026-11-16), one run per generator file date; the counts are in section 14; one full-scale day only to measure RAM. The last day is what finalises the day before it, because a day's late orders and refunds arrive in the next file. The 47th day was added on 23 Nov for the "one new day" acceptance of T06 |
 | D6 | Generator inside Airflow | Defer; CLI for 22 Nov |
+
+## 14. Demo dataset (single source of truth)
+
+Every count that describes the demo window is here. Other documents say "the demo window" and point
+to this table instead of repeating a number, so moving the window is one edit.
+
+| Quantity | Value |
+|---|---|
+| Days on the dashboard (the cards filter `order_date >= 2026-10-01`) | **47**, 2026-10-01 to 2026-11-16 |
+| Dates in the lake, per table | **48**, 2026-09-30 to 2026-11-16 (the extra date holds the late orders that arrived in the 2026-10-01 file) |
+| Rows in `fact_branch_day` | **5640** (47 days x 120 branches) |
+| Objects in `jff-lake` (silver + gold) | **192** (48 dates x 4 tables) |
+| Orders (`fact_order` and `silver_orders`) | **563599** |
+| Order lines (`fact_order_item` and `silver_order_items`) | **1372125** |
+
+The window is bounded by the DAG's `start_date` and `end_date` (`dags/jff_daily.py`). Moving it means
+generating the new days, changing those two dates and re-running the backfill; no other file hardcodes
+a count.

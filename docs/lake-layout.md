@@ -51,10 +51,11 @@ jff-lake/gold/fact_order_item/order_date=YYYY-MM-DD/part.parquet
   disappears from DuckDB cannot survive in the lake. The check runs for the dates the publish covers;
   a date that drops out of DuckDB and is never republished keeps its object until it is.
 - The window is the same one the rest of the pipeline uses: `ds - 10 .. ds`, eleven dates per run
-  (`--lookback-days` changes the size). A daily run therefore republishes its last eleven days, and the
-  46 backfill runs together leave one object per day. The run for `ds = 2026-10-01` also publishes
-  `2026-09-30`, the late orders that arrived in the 10-01 file, so the completed lake has 47 dates and
-  is a full mirror of DuckDB.
+  (`--lookback-days` changes the size). A daily run therefore republishes its last eleven days, and one
+  run per file date leaves one object per day. The run for `ds = 2026-10-01` also publishes
+  `2026-09-30`, the late orders that arrived in the 10-01 file, so the lake holds one more date than
+  the dashboard and is a full mirror of DuckDB. The counts are in
+  [pipeline-design.md section 14](pipeline-design.md#14-demo-dataset-single-source-of-truth).
 
 Reading it:
 
