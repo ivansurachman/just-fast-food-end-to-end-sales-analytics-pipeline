@@ -140,6 +140,26 @@ so a rebuild cannot pick a newer one.
 
 Everything else in `dbt-constraints.txt` came from the resolver and is pinned as resolved.
 
+## Test tooling (T07)
+
+`pipelines/constraints.txt` is the single pin file for the pipeline test environment; the versions of
+`duckdb`, `boto3`, `psycopg`, `pytest`, `ruff` and `mypy` are the ones already listed above. The tools
+that only exist for scanning, and the generator's own dev pins, are chosen here:
+
+| Package or image | Version | Released | Why |
+|---|---|---|---|
+| `pip-audit` | 2.10.1 | 2026-06-10 | Newest release; used from a throwaway virtualenv, never installed into the project |
+| `aquasec/trivy` | 0.76.2 | 2026-11-05 | Newest tag older than 14 days; 0.76.1 (2026-10-21) would also do |
+| `types-PyYAML` | 6.0.12.20261103 | 2026-11-03 | `6.0.12.20261111` and `...1122` are newer than the cutoff. In `generator/constraints-dev.txt` |
+| `pandas-stubs` | 3.1.0.261029 | 2026-10-29 | Newest release older than 14 days. In `generator/constraints-dev.txt` |
+
+GitHub Actions, pinned to tags older than 14 days:
+
+| Action | Tag | Released |
+|---|---|---|
+| `actions/checkout` | `v7.0.1` | 2026-07-20 |
+| `actions/setup-python` | `v7.1.0` | 2026-10-22 |
+
 ## Not yet pinned
 
-- Metabase: T04.
+- Nothing: Metabase was pinned at `v0.65.3` in T04.
