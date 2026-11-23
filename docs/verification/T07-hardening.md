@@ -138,6 +138,70 @@ Verdict: **pass**, with four manual steps beyond the README (see the last sectio
 
 All four are now in `README.md` and `AGENTS.md`.
 
+### Teardown and restore
+
+Before deleting anything, Ivan asked for three checks. The volumes of the two projects are separate and
+none shares a name, the compose `volumes:` block has no explicit `name:` key, and this file carries the
+evidence above:
+
+```
+podman volume ls --format "{{.Name}}" | grep '^jff'
+jff_pgdata
+jff_seaweedfs_data
+jff_jff_duckdb
+jff-clean_pgdata
+jff-clean_seaweedfs_data
+jff-clean_jff_duckdb
+
+podman compose -p jff-clean config --volumes     -> podman-compose 1.6.0: usage error, the flag does not exist
+grep -n "name:" compose.yaml (volumes block, lines 253-257)
+253: volumes:
+254:   pgdata:
+255:   seaweedfs_data:
+257:   jff_duckdb:                                   (no explicit name, the project prefix applies)
+```
+
+Only the clean project was removed:
+
+```
+podman compose -p jff-clean down -v
+jff-clean_pgdata
+jff-clean_seaweedfs_data
+jff-clean_jff_duckdb
+jff-clean_default
+exit 0
+
+podman volume ls --format "{{.Name}}" | grep '^jff'
+jff_pgdata
+jff_seaweedfs_data
+jff_jff_duckdb                                    (the three originals are intact)
+
+podman ps -a --filter "name=jff-clean"            -> (empty)
+```
+
+The original stack came back on its own volumes:
+
+```
+podman compose up -d
+podman ps
+jff_postgres_1             Up About a minute (healthy)
+jff_seaweedfs_1            Up About a minute (healthy)
+jff_metabase_1             Up About a minute (healthy)
+jff_airflow-api-server_1   Up 49 seconds (healthy)
+jff_airflow-scheduler_1    Up 29 seconds
+jff_airflow-dag-processor_1 Up 11 seconds
+airflow /api/v2/monitor/health -> metadatabase healthy
+
+card=Net sales per day id=40 rows=48
+first=2026-10-01 711114250
+last =2026-11-17 730360400
+
+free -m after restoring: total 7822, used 3127, available 4695
+```
+
+Verdict for the clean-room and the teardown: **pass**.
+
+
 ## 2. `check_secrets.py` on the clone
 
 ```
