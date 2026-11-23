@@ -133,11 +133,17 @@ class Metabase:
         """Create the card, or replace the definition of the card with that name.
 
         Updating matters: the SQL of a card lives in this repository, so re-running the setup after
-        changing a file must change the card, not leave the old query in Metabase.
+        changing a file must change the card, not leave the old query in Metabase. Only the fields
+        this script owns are sent, so a dashboard or a display setting changed in the UI is kept.
         """
         for card in self.search("card"):
             if card.get("name") == name:
-                self.request("PUT", f"/card/{card['id']}", definition)
+                owned = {
+                    key: definition[key]
+                    for key in ("name", "description", "display", "dataset_query")
+                    if key in definition
+                }
+                self.request("PUT", f"/card/{card['id']}", owned)
                 LOG.info("card %s updated (id %s)", name, card["id"])
                 return int(card["id"])
         _, created = self.request("POST", "/card", definition)
