@@ -78,9 +78,7 @@ def tracked_files_with_value(value: str) -> list[str]:
 def risky_files_in_history() -> list[str]:
     """Names of key or env files that were ever committed."""
     out = git("log", "--all", "--name-only", "--format=", "--", *RISKY_PATHS)
-    return sorted(
-        {name for name in out.splitlines() if name and name != ".env.example"}
-    )
+    return sorted({name for name in out.splitlines() if name and name != ".env.example"})
 
 
 def main(argv: list[str]) -> int:
@@ -105,9 +103,7 @@ def main(argv: list[str]) -> int:
         files = tracked_files_with_value(value)
         if history or files:
             problems += 1
-            print(
-                f"FOUND  {name}: commits {history or '-'}, tracked files {files or '-'}"
-            )
+            print(f"FOUND  {name}: commits {history or '-'}, tracked files {files or '-'}")
         else:
             print(f"clean  {name}")
     if skipped:
@@ -115,11 +111,7 @@ def main(argv: list[str]) -> int:
     for name in risky_files_in_history():
         problems += 1
         print(f"FOUND  file in history: {name}")
-    print(
-        "secrets in git: NONE"
-        if not problems
-        else f"secrets in git: {problems} problem(s)"
-    )
+    print("secrets in git: NONE" if not problems else f"secrets in git: {problems} problem(s)")
     return 1 if problems else 0
 
 
