@@ -7,6 +7,9 @@ name: jff
 
 x-airflow-common: &airflow-common
   image: jff-airflow:3.3.2
+  # Setuid/setgid binaries in the image cannot gain anything: the processes run as the airflow user.
+  security_opt:
+    - no-new-privileges:true
   build:
     context: .
     # One build file for both providers. podman-compose 1.6.0 on Windows ignores this key and
@@ -57,6 +60,8 @@ x-airflow-common: &airflow-common
 services:
   postgres:
     image: docker.io/library/postgres:18.4
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 600m
     restart: unless-stopped
     environment:
@@ -85,6 +90,8 @@ services:
 
   postgres-ro:
     image: docker.io/library/postgres:18.4
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 256m
     restart: "no"
     # One-shot, and not counted in the memory budget. The init SQL only runs on a fresh volume, so the
@@ -104,6 +111,8 @@ services:
 
   seaweedfs:
     image: docker.io/chrislusf/seaweedfs:4.52
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 600m
     restart: unless-stopped
     environment:
@@ -126,6 +135,8 @@ services:
 
   seaweedfs-init:
     image: docker.io/chrislusf/seaweedfs:4.52
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 256m
     restart: "no"
     entrypoint: ["/bin/sh", "/etc/seaweedfs/create-buckets.sh"]
@@ -205,6 +216,8 @@ services:
 
   metabase:
     image: docker.io/metabase/metabase:v0.65.3
+    security_opt:
+      - no-new-privileges:true
     # 1600m after the T04 review: 1400m left about 60 MB of headroom while the JVM sat at 95%.
     # The 200 MB comes from the api-server, so the long-running total stays 5600 MB.
     mem_limit: 1600m
