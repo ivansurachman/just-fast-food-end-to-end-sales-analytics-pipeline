@@ -29,6 +29,43 @@ pytest && ruff check . && mypy src tests
 Full command reference: `docs/cli-guide.md`. Dataset profile: `docs/data-profile.md`. The same date
 always produces identical files for the same seed and library versions, so keep the constraints pinned.
 
+## First run from a fresh clone
+
+A clean-room run on 2026-11-23 (empty folder, no volumes, own project name) needed exactly this:
+
+```
+# 1. Python must exist before anything else: gen_env.py is standard library only
+python tools/gen_env.py                 # writes .env, prints names, never values
+
+# 2. If a native PostgreSQL already holds 5432, change the host port in .env
+#    POSTGRES_HOST_PORT=5433             (the container still reaches Postgres as postgres:5432)
+
+# 3. Build and start
+podman compose build --no-cache
+podman compose up -d
+podman compose ps                       # wait for healthy
+
+# 4. Dimensions once, then the fact days, inside the scheduler
+podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen dim all \
+    --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
+podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen generate \
+    --start 2026-10-03 --end 2026-10-09 --scale 0.02 \
+    --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
+
+# 5. Point the DAG at the days that exist (start_date and end_date in dags/jff_daily.py),
+#    otherwise catchup schedules runs for days without data and their wait_manifest blocks
+#    the backfill behind max_active_runs=1.
+podman exec jff_airflow-scheduler_1 airflow dags unpause jff_daily
+podman exec jff_airflow-scheduler_1 airflow backfill create \
+    --dag-id jff_daily --from-date 2026-10-03 --to-date 2026-10-09
+podman exec jff_airflow-scheduler_1 airflow dags pause jff_daily
+
+# 6. Dashboards
+python dashboards/setup.py              # prints one URL per page
+```
+
+A `python` on PATH is enough for steps 1 and 6; they use the standard library only.
+
 ## Test environments
 
 Three environments, three commands. Anything else is untested; the containers run the pipeline and do
