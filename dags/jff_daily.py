@@ -1,15 +1,16 @@
-"""`jff_daily`: wait for the generator's manifest, ingest bronze, check bronze, dbt, marts.
+"""`jff_daily`: wait for the generator's manifest, ingest bronze, check bronze, dbt, marts, publish.
 
 One run per generator file date (`ds`), `catchup=True` so a backfill is one run per date, and
 `max_active_runs=1` because DuckDB allows a single writer (docs/pipeline-design.md section 4).
-The ingest and dbt tasks take the one slot of the `duckdb_writer` pool.
+The tasks that touch DuckDB take the one slot of the `duckdb_writer` pool.
 
 The DAG is bounded: `start_date` 2026-10-01 and `end_date` 2026-11-15 are the 46-day demo window,
 so unpausing it can only ever create those 46 runs. `wait_manifest` gives up after two hours, so a
 day the generator never wrote fails loudly instead of waiting forever. The last day is what makes
 2026-11-14 final: its late orders arrive in the file of 2026-11-15.
 
-`load_marts` copies the mart window from DuckDB into PostgreSQL (T04).
+`load_marts` copies the mart window from DuckDB into PostgreSQL and `publish_parquet` mirrors the
+silver and gold tables into the lake, one Parquet object per table and order date.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.sensors.python import PythonSensor
 from airflow.sdk import dag, get_current_context, task
 
-from pipelines import check_bronze, ingest_bronze
+from pipelines import check_bronze, ingest_bronze, publish_parquet
 from pipelines.manifest import manifest_key, object_exists
 
 LOG = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ LAKE_ROOT = os.environ.get("JFF_LAKE_ROOT", ingest_bronze.DEFAULT_LAKE_ROOT)
 S3_ENDPOINT = os.environ.get("JFF_S3_ENDPOINT")
 RAW_BUCKET = RAW_ROOT.removeprefix("s3://").split("/", 1)[0]
 DUCKDB_POOL = "duckdb_writer"
+# Design section 6: every task that rewrites partitions uses the same 10-day window.
+LOOKBACK_DAYS = 10
 
 DBT_HOME = "/opt/airflow/dbt"
 DBT = "/opt/venvs/dbt/bin/dbt"
@@ -40,7 +43,7 @@ DBT = "/opt/venvs/dbt/bin/dbt"
 # The single braces are dbt's JSON var syntax; Airflow renders only `{{ ds }}`.
 DBT_ARGS = (
     f"--project-dir {DBT_HOME} --profiles-dir {DBT_HOME} "
-    """--vars '{"run_date": "{{ ds }}", "lookback_days": 10}'"""
+    f"""--vars '{{"run_date": "{{{{ ds }}}}", "lookback_days": {LOOKBACK_DAYS}}}'"""
 )
 DBT_ENV = {
     "JFF_S3_ENDPOINT": S3_ENDPOINT or "",
@@ -50,7 +53,8 @@ DBT_ENV = {
 # load_marts runs with the dbt virtualenv, which has both duckdb and psycopg. psycopg reads the PG*
 # variables that compose sets, so no credential appears here.
 LOAD_MARTS_CMD = (
-    "/opt/venvs/dbt/bin/python -m pipelines.load_marts --ds {{ ds }} --lookback-days 10"
+    f"/opt/venvs/dbt/bin/python -m pipelines.load_marts --ds {{{{ ds }}}} "
+    f"--lookback-days {LOOKBACK_DAYS}"
 )
 
 
@@ -130,7 +134,20 @@ def jff_daily() -> None:
         doc="Load the mart window into PostgreSQL: delete and copy in one transaction.",
     )
 
+    @task(task_id="publish_parquet", pool=DUCKDB_POOL)
+    def publish_task() -> dict[str, int]:
+        """Publish the run's window to the lake; the lake is derived, DuckDB stays the source."""
+        ds = get_current_context()["ds"]
+        return publish_parquet.publish_window(
+            ds,
+            lookback_days=LOOKBACK_DAYS,
+            duckdb_path=DBT_ENV["DBT_DUCKDB_PATH"],
+            lake_root=LAKE_ROOT,
+            endpoint=S3_ENDPOINT,
+        )
+
     wait_manifest >> ingest_task() >> check_task() >> dbt_run >> dbt_test >> load_marts
+    load_marts >> publish_task()
 
 
 jff_daily()
