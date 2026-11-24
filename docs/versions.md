@@ -182,6 +182,15 @@ GitHub Actions, pinned to tags older than 14 days:
 | `actions/checkout` | `v7.0.1` | 2026-07-20 |
 | `actions/setup-python` | `v7.1.0` | 2026-10-22 |
 
+## Documentation tooling (T08)
+
+The as-built diagram is rendered with Graphviz, which is not installed on the host. The image below
+carries `dot`; it is used only to produce `docs/slides/architecture.svg` and `.png`.
+
+| Image | Tag | Released | Why |
+|---|---|---|---|
+| `docker.io/library/alpine` | 3.24.3 | 2026-10-23 | Newest tag older than 14 days when the diagram was rendered; its `graphviz` package is 12.2.1 |
+
 ## Not yet pinned
 
 - Nothing: Metabase was pinned at `v0.65.3` in T04.

@@ -1,40 +1,47 @@
 digraph arch {
-  rankdir=LR; compound=true; nodesep=0.5; ranksep=0.7;
-  fontname="Helvetica"; node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7a"];
+  rankdir=LR; compound=true; nodesep=0.45; ranksep=0.8;
+  fontname="Helvetica"; node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#5b6b7a"];
   edge [color="#5b6b7a", fontname="Helvetica", fontsize=9, arrowsize=0.7];
 
   subgraph cluster_podman {
-    label="Podman network (WSL2 backend, total limit 9 GB)"; labeljust=l; style="rounded,dashed"; color="#8896a5"; fontsize=12;
+    label="Podman machine (WSL2, rootful) - 7.6 GiB VM, stack limits 5600 MB\nall ports bound to 127.0.0.1";
+    labeljust=l; style="rounded,dashed"; color="#8896a5"; fontsize=11;
 
     subgraph cluster_airflow {
-      label="Airflow  (~2.4 GB est.)"; style="rounded,filled"; fillcolor="#fff4e0"; color="#f0a030";
-      gen [label="DAG simulate_source\nseeded Python generator", fillcolor="#ffe3b3"];
-      ing [label="DAG ingest_and_transform (daily, backfill)\n1 wait for manifest\n2 CSV to Parquet (bronze)\n3 dbt + DuckDB (silver, gold)\n4 dbt tests and DQ checks\n5 load marts", fillcolor="#ffe3b3"];
+      label="Airflow 3.3.2  (jff-airflow:3.3.2)\nservices: airflow-scheduler, airflow-api-server, airflow-dag-processor, airflow-init (one-shot)"; style="rounded,filled"; fillcolor="#fff4e0"; color="#f0a030";
+      sched [label="airflow-scheduler  (1700 MB)\njff_daily, one run per file date\n1 wait_manifest\n2 ingest_bronze\n3 check_bronze\n4 dbt_run (silver + gold, DuckDB)\n5 dbt_test\n6 load_marts\n7 publish_parquet", fillcolor="#ffe3b3"];
+      api [label="airflow-api-server  (600 MB)\nUI and REST  :8080", fillcolor="#ffe3b3"];
+      proc [label="airflow-dag-processor  (500 MB)", fillcolor="#ffe3b3"];
     }
 
     subgraph cluster_s3 {
-      label="SeaweedFS S3  (~0.5 GB est.)"; style="rounded,filled"; fillcolor="#e8f1fb"; color="#5b9bd5";
-      raw [label="raw CSV\norders, order_items,\norder_changes (dt=...)\n+ manifest", fillcolor="#cfe2f7"];
-      lake [label="Parquet lake\nbronze, silver, gold\npartition: order_date", fillcolor="#cfe2f7"];
+      label="SeaweedFS 4.52  (600 MB)   S3 :8333, filer :8888\nservices: seaweedfs, seaweedfs-init (one-shot)"; style="rounded,filled"; fillcolor="#e8f1fb"; color="#5b9bd5";
+      raw [label="jff-raw\n<entity>/dt=YYYY-MM-DD/*.csv\ndimensions/*.csv\n_manifests/dt=.../manifest.json (written last)", fillcolor="#cfe2f7"];
+      lake [label="jff-lake\nbronze/<entity>/source_file_date=YYYY-MM-DD/\nsilver|gold/<table>/order_date=YYYY-MM-DD/part.parquet", fillcolor="#cfe2f7"];
     }
 
     subgraph cluster_pg {
-      label="PostgreSQL  (~0.45 GB est.)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
-      marts [label="database analytics\ngold marts", fillcolor="#d3ecd3"];
-      meta [label="Airflow and\nMetabase metadata", fillcolor="#d3ecd3"];
+      label="PostgreSQL 18.4  (600 MB)   :5433 on the host -> 5432\nservices: postgres, postgres-ro (one-shot)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
+      meta [label="databases airflow + metabase\n(Airflow metadata, Metabase app DB)", fillcolor="#d3ecd3"];
+      marts [label="database analytics: 5 marts\nsales_day_branch_channel, hourly, item_day,\npromo_day, branch_coverage\nrole analytics_ro: SELECT only", fillcolor="#d3ecd3"];
     }
 
-    subgraph cluster_ss {
-      label="Metabase  (~1.0 GB est.)"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
-      dash [label="Dashboard\n6 pages, 18 metrics", fillcolor="#e3cdf3"];
+    subgraph cluster_mb {
+      label="Metabase v0.65.3  (1600 MB, -Xmx768m)   :3000"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
+      dash [label="5 pages, 17 cards\nSales overview, Channel and branch,\nOperations, Menu, Promo", fillcolor="#e3cdf3"];
     }
   }
 
-  gen -> raw [label=" daily CSV"];
-  raw -> ing [label=" read"];
-  ing -> lake [label=" write Parquet"];
-  lake -> ing [label=" DuckDB reads", style=dashed];
-  ing -> marts [label=" load"];
-  marts -> dash [label=" query"];
-  meta -> ing [style=dotted, arrowhead=none];
+  host [label="host (Windows)\njff-gen CLI\ndashboards/setup.py\ntools/gen_env.py, check_secrets.py", style="rounded,dashed", fillcolor="#f5f5f5"];
+
+  host -> raw [label=" CSV, manifest last", style=dashed];
+  raw -> sched [label=" ingest_bronze reads"];
+  sched -> lake [label=" bronze write,\n silver/gold publish"];
+  lake -> sched [label=" DuckDB reads\n(one writer)", style=dashed];
+  sched -> marts [label=" load_marts:\nDELETE window + COPY"];
+  marts -> dash [label=" SQL as analytics_ro"];
+  dash -> meta [label=" app database", style=dotted];
+  meta -> sched [label=" metadata", style=dotted];
+  api -> sched [label=" task tokens", style=dotted];
+  host -> dash [label=" setup.py (REST)", style=dashed];
 }
