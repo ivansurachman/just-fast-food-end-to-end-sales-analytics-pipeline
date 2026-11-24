@@ -2,7 +2,7 @@ opencode-go/deepseek-v4.1-flash
 
 # T08 verification: README, architecture diagram, conclusion
 
-Task: `tasks/T08-readme-and-docs.md`. Branch `task/T08-docs` (from `main` = `124f5dd`). Date 2026-11-24.
+Task: `tasks/T08-readme-and-docs.md`. Branch `task/T08-docs` (from `main` = `667094b`, Ivan's expanded spec). Date 2026-11-24.
 
 ## Deliverables
 
