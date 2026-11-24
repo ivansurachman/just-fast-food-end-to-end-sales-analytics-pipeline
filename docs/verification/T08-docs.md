@@ -167,6 +167,22 @@ all present in docs/slides/architecture.dot: True
 
 No application code changed in this task except the two `timeout-minutes` lines the task asked for.
 
+## Review follow-up (2026-11-24)
+
+The reviewer found one wrong number and two wrong citations; all six findings are closed here.
+
+| Finding | Fix |
+|---|---|
+| **Blocker:** "6 refund changes" was the task text's estimate at scale 0.02. At scale 0.1 the measured value is 163 rows referencing orders before the window, 166 orphan rows with the three dropped branch-days | `README.md` and `docs/conclusion.md` now say 163 and 166 and cite `docs/verification/T04-marts.md` |
+| README claimed the exact sequence ran from an empty clone in one pass | it now says every step ran in the T07 clean-room and the order is the corrected one, because that run needed two attempts |
+| "generator 41" cited T06 section 7 and T07 section 5, neither of which counts the generator tests | the source is now T06 section 7, T01 (41 passed) and T07 section 5 |
+| 27,410 rows in `mart_sales_day_branch_channel` had no citation where it was used | now cites T07 section 8 |
+| "about a million orders" and "12k orders per day" read as measurements | the first is labelled a judgment, the second a derivation from section 14 |
+| The diagram showed a machine-specific host port and Metabase only inside a cluster label | the label is now `${POSTGRES_HOST_PORT:-5432}` and Metabase has its own `services: metabase` line |
+
+The diagram was re-rendered after the label change and still carries all nine compose services and all
+seven DAG tasks.
+
 ## Numbers and their sources
 
 Every number in the README and in the conclusion points at one of: `docs/pipeline-design.md` section 14

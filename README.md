@@ -93,8 +93,10 @@ python dashboards/setup.py              # creates the connection, 17 cards and 5
 ```
 
 Then open `http://localhost:3000` (Metabase, the admin from `.env`), `http://localhost:8080` (Airflow) and
-`http://127.0.0.1:8888/buckets/` (the SeaweedFS file browser). This exact sequence was run from an empty
-clone on 2026-11-23; the report is `docs/verification/T07-hardening.md` section 1.
+`http://127.0.0.1:8888/buckets/` (the SeaweedFS file browser). Every step ran in the T07 clean-room on
+2026-11-23; the order below is the corrected one, because that run needed two attempts — the dimensions
+were missing at first, and the DAG boundary had to be pointed at the days that exist. Report:
+`docs/verification/T07-hardening.md` section 1.
 
 ### Run one new day
 
@@ -227,8 +229,10 @@ Every limitation below has a report behind it.
   partition is rewritten on the next run (T04).
 - **`fact_branch_day` starts at the first file date.** 2026-09-30 has orders (late arrivals of the 10-01
   file) but no file of its own, so it is not a coverage day (T06 section 2).
-- **Orphan refunds before the window.** 6 refund changes refer to orders older than the loaded window and
-  therefore do not attach to an order (T04b).
+- **Orphan refunds before the window.** 163 refund rows reference orders dated 2026-09-23 .. 2026-09-30,
+  before the dataset starts, so they do not attach to an order; the generator writes refunds for orders it
+  never produced. With three rows that reference dropped branch-days the orphan count is 166
+  (`docs/verification/T04-marts.md`).
 - **A lake partition can outlive its date.** A partition is deleted only when its own date is published
   again; a date that disappears from DuckDB and is never republished keeps its object (T05 section 5).
 - **The dashboard date filter is a fixed date** in all 17 cards; a different dataset means editing them or

@@ -21,13 +21,13 @@ digraph arch {
     }
 
     subgraph cluster_pg {
-      label="PostgreSQL 18.4  (600 MB)   :5433 on the host -> 5432\nservices: postgres, postgres-ro (one-shot)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
+      label="PostgreSQL 18.4  (600 MB)   host :${POSTGRES_HOST_PORT:-5432} -> 5432\nservices: postgres, postgres-ro (one-shot)"; style="rounded,filled"; fillcolor="#eaf6ea"; color="#6aa84f";
       meta [label="databases airflow + metabase\n(Airflow metadata, Metabase app DB)", fillcolor="#d3ecd3"];
       marts [label="database analytics: 5 marts\nsales_day_branch_channel, hourly, item_day,\npromo_day, branch_coverage\nrole analytics_ro: SELECT only", fillcolor="#d3ecd3"];
     }
 
     subgraph cluster_mb {
-      label="Metabase v0.65.3  (1600 MB, -Xmx768m)   :3000"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
+      label="Metabase v0.65.3  (1600 MB, -Xmx768m)   :3000\nservices: metabase"; style="rounded,filled"; fillcolor="#f3e8fb"; color="#9b6bc5";
       dash [label="5 pages, 17 cards\nSales overview, Channel and branch,\nOperations, Menu, Promo", fillcolor="#e3cdf3"];
     }
   }
