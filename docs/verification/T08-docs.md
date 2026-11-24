@@ -109,13 +109,17 @@ stuck becomes a documentation fix here.
 ### 2. `git grep -n "verify"` in `docs/` and `README.md`
 
 ```
+$ git grep -n -i "verify" -- docs README.md
 docs/cli-guide.md:108:| Clean data to verify metrics | add `--clean` |
 docs/verification/T04-marts.md:289:INFO app-db.setup :: Verifying postgres Database Connection ...
+docs/verification/T08-docs.md: ... (15 lines: this section and the table below)
+
+17 lines: 1 recipe row, 1 quoted log line, 15 in this record.
 ```
 
-Neither is an unverified claim: the first is a recipe row where "verify" is the verb, the second is a
-Metabase log line quoted as evidence. No unverified claim remains; the earlier live ones were resolved in
-this task:
+None of them is an unverified claim. The first is a recipe row where "verify" is the verb; the second is
+a Metabase log line quoted as evidence; the rest is this section quoting that grep. No claim in the living
+docs is left unverified: every earlier marker was resolved in this task.
 
 | Was | Now |
 |---|---|
@@ -135,7 +139,7 @@ A checker extracted every repo path mentioned in `README.md`, `docs/conclusion.m
 and `docs/demo-script.md` and required it to exist and be tracked:
 
 ```
-checked=57 missing=0
+checked=59 missing=0
 ```
 
 The same checker over every file in `docs/`: `checked=47 missing=0`.
