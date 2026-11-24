@@ -1,6 +1,6 @@
 # Pipeline design (Phase 3)
 
-Status: **draft for approval, 17 Nov 2026**. Nothing in this document has been run. Every number marked *est.* is an estimate until measured on 18 Nov. Items marked **verify** depend on a version or a Podman behaviour that has not been checked.
+Status: **implemented, 24 Nov 2026**. This started as the draft for approval of 17 Nov; everything below has since been built and measured, and each estimate that a report could settle now points at `docs/verification/`. Where a statement used to be flagged for checking, the measured outcome is written instead; where it could not be measured, it says so.
 
 Serves checkpoint: **22 Nov, Mentoring 2 (pipeline runs end to end)**. Anything not needed for that goes to the "later" list at the end.
 
@@ -71,7 +71,7 @@ This is the one place the design goes beyond the literal wording of the approved
 | Option | How | Cost |
 |---|---|---|
 | **A (recommended)** | dbt-duckdb `incremental` models with `delete+insert` on `order_date`, in a persistent DuckDB file. Parquet by `order_date` is *published* from it as a P2 task | Silver Parquet is a copy, not the primary store. If publish breaks, the pipeline still runs |
-| B | Parquet is primary. dbt `external` materialization, or a custom partition-overwrite step | dbt-duckdb external models rewrite the whole output and, as far as I know, have no partition-level incremental (**verify**). Partition overwrite on S3 needs custom delete-prefix code. Roughly one extra day of risk |
+| B | Parquet is primary. dbt `external` materialization, or a custom partition-overwrite step | dbt-duckdb external models rewrite the whole output and, as far as I know, have no partition-level incremental (not tested: option A was chosen, so the external materialization was never evaluated). Partition overwrite on S3 needs custom delete-prefix code. Roughly one extra day of risk |
 
 Why A: the approved choice of DuckDB + dbt is kept, the refund rewrite maps to a well-trodden dbt strategy, and the lake still exists (bronze Parquet on S3, replayable). Honest weakness: the Parquet-by-`order_date` layer is not on the critical path for 22 Nov. The "Partition & Clustering" rubric item is covered by the P2 publish task and by Postgres indexes. If the publish task is cut, say so in the slides instead of claiming it.
 
@@ -172,16 +172,19 @@ Marts keep numerators and denominators, never finished ratios, so Metabase canno
 
 Every mart has an index on `order_date`, and the window they cover is the one in section 14, at scale 0.1. Metabase app database is a separate Postgres database, not H2.
 
-`load_marts` uses `psycopg` with `COPY` from a DuckDB Arrow result. The DuckDB `postgres` extension is the alternative; it needs an extension download at runtime (**verify**), so it is not the default.
+`load_marts` uses `psycopg` with `COPY` from a DuckDB `fetchall` result. The DuckDB `postgres`
+extension is the alternative; it would need an extension download at runtime (not measured: the loader
+never used that path), so it is not the default.
 
 ## 9. Podman on Windows Home: what behaves differently
 
-All **verify** until the smoke test on Ivan's machine passes.
+Measured on Ivan's machine in T00 and refined by T04-T07; the notes below are the outcomes, not expectations.
 
 - **Memory limits may be ignored.** Rootless Podman needs cgroup v2 with the memory controller delegated. In a WSL2 machine this depends on systemd and the delegation setup. Check by running a container with a low limit and reading `podman stats`. If limits are not enforced, the "explicit limits in compose files" claim is false on Windows and must be stated as such.
 - **Named volumes for databases.** Postgres, SeaweedFS and `jff.duckdb` must live on named volumes inside the WSL filesystem. Bind mounts from `C:\...` go through a slow cross-OS filesystem and break file permissions and locking.
 - **Bind mounts only for code.** `dags/`, `dbt/` and `generator/` as relative bind mounts. Keep `.gitattributes` LF so shell scripts work inside containers.
-- **Rootless UID mapping.** The Airflow image runs as UID 50000. Writable named volumes may need `user:` or `userns_mode` settings (**verify**).
+- **Rootless UID mapping.** The Airflow image runs as UID 50000. Not needed in practice: the named
+  volumes are writable by the airflow user without `user:` or `userns_mode` (T00, T04).
 - **Compose provider.** `podman compose` delegates to `docker-compose` or `podman-compose`. They differ on `deploy.resources` versus `mem_limit`. Pin one provider and document it.
 - **Postgres host port.** The mapping is `127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432`, and `.env.example`
   sets `POSTGRES_HOST_PORT=5432`. On a machine where a native server already listens on 5432 (Ivan has
@@ -228,7 +231,7 @@ Iceberg, ClickHouse, monitoring tooling, Telegram alerting, platform settlement 
 |---|---|---|
 | D1 | Silver/gold compute store | A: DuckDB file plus dbt incremental, Parquet published as P2 |
 | D2 | Reprocessing window | Fixed 10 days plus guard test |
-| D3 | Airflow line | 3.x pinned to an exact patch tag older than two weeks (**verify** tag on 18 Nov), fall back to 2.11.x |
+| D3 | Airflow line | 3.3.2, pinned on 2026-09-17 (docs/versions.md); no fallback to 2.11.x was needed |
 | D4 | Postgres layout | One instance, three databases |
 | D5 | Demo dataset | 48 days at scale 0.1 (2026-10-01 to 2026-11-17), one run per generator file date; the counts are in section 14; one full-scale day only to measure RAM. The last day is what finalises the day before it, because a day's late orders and refunds arrive in the next file. The 47th and 48th days were added on 23 Nov for the "one new day" acceptance of T06 and the demo-procedure test of T07 |
 | D6 | Generator inside Airflow | Defer; CLI for 22 Nov |

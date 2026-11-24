@@ -124,7 +124,7 @@ Only refunds exist today. A refund appears in the file of the day it happens, wh
 | `order_origin` | string | yes | Where the order came from | `offline`, `online` | `online` |
 | `platform` | string | yes | Delivery platform, `none` for offline | `none`, `grabfood`, `gofood`, `shopeefood` | `grabfood` |
 | `service_type` | string | yes | How the customer receives the order | `dine_in`, `takeaway`, `delivery` | `delivery` |
-| `commission_rate` | decimal | yes | Share of `total_amount` kept by the platform. Synthetic placeholder values, verify against real terms before quoting | 0 to 1, `0` for offline | `0.2` |
+| `commission_rate` | decimal | yes | Share of `total_amount` kept by the platform. Synthetic placeholder values, not real platform terms | 0 to 1, `0` for offline | `0.2` |
 
 ## Run metadata
 
