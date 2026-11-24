@@ -21,6 +21,7 @@ jobs:
   pipelines:
     name: pipelines and dags
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
@@ -45,6 +46,7 @@ jobs:
   generator:
     name: generator
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: generator

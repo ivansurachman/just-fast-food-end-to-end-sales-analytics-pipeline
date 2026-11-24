@@ -8,7 +8,16 @@ secret in git, a role that can write) and, second, the supply chain (pinned pack
 
 | Area | How |
 |---|---|
-| Network exposure | Every published port is bound to `127.0.0.1` in `compose.yaml`: Postgres (default 5432, 5433 on Ivan's machine because a native server holds 5432), SeaweedFS 8333, the filer 8888, Airflow 8080, Metabase 3000. Nothing listens on the LAN or in WSL |
+| Network exposure | Every published port is bound to `127.0.0.1` in `compose.yaml`: Postgres (default 5432, 5433 on Ivan's machine because a native server holds 5432), SeaweedFS 8333, the filer 8888, Airflow 8080, Metabase 3000. Measured on Windows on 2026-11-24, see below |
+
+**Loopback evidence (2026-11-24, Windows).** `podman ps` prints every published port as
+`127.0.0.1:<host>->...`. `netstat -ano` shows 3000, 5433, 8080, 8333 and 8888 in state `LISTENING` only
+on `127.0.0.1`, all owned by one process, the Podman port forwarder (PID 15320 at that time; the PID
+changes). `Test-NetConnection` to the machine's own LAN address (192.168.18.138, Wi-Fi) returned `False`
+on all five ports while `127.0.0.1` returned `True` on all five. `Get-NetTCPConnection -State Listen`
+is the PowerShell view and listed the same five on `127.0.0.1` when re-run on 2026-11-24; Ivan's earlier
+attempt with it returned nothing for these ports, which is why `netstat` is the evidence recorded here.
+This was not tested from another device.
 | Database roles | One Postgres instance, three databases (`airflow`, `metabase`, `analytics`), one role each. Metabase reads the marts as `analytics_ro`, created by `infra/postgres/create-analytics-ro.sh` with `SELECT` only, refreshed on every `up`, and `ALTER DEFAULT PRIVILEGES` covers the tables the loader creates later |
 | Secrets | Only in `.env`, which is gitignored; `.env.example` carries placeholders. `tools/gen_env.py` generates fresh values (a valid Fernet key, alphanumerics for the S3 keys, tokens for the passwords) and refuses to overwrite. `tools/check_secrets.py` searches every commit for every value in `.env`: **`secrets in git: NONE`** on 2026-11-23, and it also fails if a `.env`, `.pem`, `.key`, `.p12` or `id_rsa*` file ever entered history |
 | Privilege escalation | `security_opt: ["no-new-privileges:true"]` on all nine services, applied and read back with `podman inspect` (`HostConfig.SecurityOpt = [no-new-privileges]`) |
@@ -19,8 +28,8 @@ secret in git, a role that can write) and, second, the supply chain (pinned pack
 ## What is not protected
 
 - **The Podman machine is rootful.** Every container is root inside the WSL2 VM, and anyone who can talk
-  to the Podman socket is root there. A rootless machine was not adopted because the bind mounts and the
-  Postgres volume needed the rootful setup to work (T00).
+  to the Podman socket is root there. The machine was already rootful when T00 ran; rootless was not
+  tested.
 - **A native Windows PostgreSQL on 5432 is outside the project.** Ivan's machine runs PostgreSQL 18 as a
   Windows service; the project publishes 5433 to avoid it. Nothing in the project protects or configures
   that server.
@@ -29,6 +38,8 @@ secret in git, a role that can write) and, second, the supply chain (pinned pack
   having been sent to the model provider, and rotate it if that matters.
 - **No TLS anywhere.** Everything is loopback HTTP: Airflow, Metabase, the SeaweedFS API. Credentials
   travel in clear text inside the VM and the host.
+- **GitHub Actions are pinned by version tag, not by commit SHA.** A tag can be moved by its owner; the
+  workflows use `actions/checkout@v7.0.1` and `actions/setup-python@v7.1.0`.
 - **One shared admin account per tool.** Airflow has the single `AIRFLOW_ADMIN_*` user and Metabase the
   single `MB_ADMIN_*` user; there are no per-person accounts and no audit trail of who changed what.
 - **No backups.** `podman compose down -v` deletes the volumes (`pgdata`, `seaweedfs_data`, `jff_duckdb`).
@@ -83,9 +94,11 @@ CRITICAL only, 2026-11-23.
 | `metabase:v0.65.3` | 1 | 0 | `libfontenc` in Alpine 3.24.3 |
 | `jff-airflow:3.3.2` (from `apache/airflow:3.3.2-python3.12`) | 342 | 23 | `aiohttp` (22 HIGH), `rsync` (20 HIGH), the `krb5` and Perl packages, and the CRITICALs: `perl*` (12), `certifi` (2), `uv` (2), `authlib`, `libsqlite3-0`, `libbrotli1`, `zlib1g`, `openssh-client`, `libxml2`, `sqlite3` |
 
-No image tag was changed in this task. To act on this, the candidates are newer patch tags, newer than
-the 14-day rule allows today or not yet evaluated: Airflow 3.3.x later patches, Postgres 18.6, Metabase
-v0.65.6, SeaweedFS 4.53. Recorded here for Ivan to decide.
+No image tag was changed in this task. To act on this, the candidates are newer patch tags, with the
+release dates recorded in `docs/versions.md`: Postgres 18.6 (2026-11-06), Metabase v0.65.6 (2026-11-18)
+and SeaweedFS 4.53 (2026-11-08) were too new for the 14-day rule on 2026-11-23, and they were not
+scanned. A newer Airflow 3.3.x patch has **not been verified to exist**. Recorded here for Ivan to
+decide.
 
 ## Decision on image and base-image advisories
 
@@ -97,6 +110,9 @@ four images are **accepted for this demo** on 2026-11-24, for four reasons:
 - the data is synthetic, generated by `jff-gen`; there is no customer, payment or personal data to lose;
 - the containers hold no credentials beyond the local `.env` values, which are also loopback-only;
 - T07 forbids changing image versions in this task, so acting on the findings is a separate decision.
+
+Windows Defender Firewall is enabled on the Domain, Private and Public profiles, checked 2026-11-24 with
+`Get-NetFirewallProfile`.
 
 Revisit this after **29 November 2026**, with two options to evaluate then:
 
