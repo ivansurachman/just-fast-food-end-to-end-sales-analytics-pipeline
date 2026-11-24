@@ -276,9 +276,22 @@ Verdict: **pass** (scanned and recorded; no image changed).
 
 ## 5. CI on GitHub
 
-**Not run.** The branch is not pushed, and pushing needs Ivan. `.github/workflows/ci.yml` is in place and
-both jobs were executed by hand on Windows with the same commands (`ruff`, `format`, `mypy`, `pytest`:
-pipeline 23 passed, generator 41 passed); the YAML parses and declares two jobs with pinned actions.
+Ivan pushed `task/T07-hardening` and merged it; both runs are green. Numbers read from the GitHub
+Actions API on 2026-11-24:
+
+```
+runs (workflow "ci"):
+  45314833633  task/T07-hardening  sha 124f5dd  push  completed  success
+  45316653703  main                sha 124f5dd  push  completed  success
+
+run 45314833633, jobs:
+  generator             success   88 s   Install, Tests, Lint, Format, Types  (all success)
+  pipelines and dags    success   37 s   Install, Lint, Format, Types, Tests  (all success)
+```
+
+Run URL: <https://github.com/ivansurachman/just-fast-food-end-to-end-sales-analytics-pipeline/actions/runs/45314833633>
+
+Verdict: **pass**.
 
 ## 6. `no-new-privileges`
 
@@ -331,7 +344,7 @@ Verdict: **pass**.
   changed, and the original stack came back on that image.
 - **Two runs of the clean-room were needed** because of the missing dimensions; the failed attempt is
   reported above rather than hidden, and the second one is the evidence.
-- Not run: GitHub CI (item 5), and no image tag was moved (item 4).
+- Not run: nothing. Item 4 deliberately moved no image tag; the scans are recorded and the decision is Ivan's.
 
 ## 8. Counts behind section 14 of the design
 
