@@ -26,7 +26,9 @@ Two stacks never ran at the same time: the original stack was stopped with `podm
 The clone was taken from the local repository (`git clone "D:\...\just-fast-food" C:\Users\acer-\jff-clean-room`)
 because this branch is not pushed; the remote is
 `https://github.com/ivansurachman/just-fast-food-end-to-end-sales-analytics-pipeline.git`. The path has
-no spaces, as the task requires, and the working tree started clean at `0a19d40`.
+no spaces, as the task requires, and the working tree started clean at `0a19d40`. The public-clone path
+itself — `git clone` from GitHub, with its own filters and a pushed branch — was **not exercised**; the
+branch was pushed afterwards and CI ran, but the clean-room was not repeated from the remote.
 
 ```
 podman compose down
