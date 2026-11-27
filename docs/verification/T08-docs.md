@@ -332,9 +332,14 @@ with nothing beyond `-p jff-readme`, and left three non-blocking notes. Four cha
 | `setup.py` should say what it did | it now ends with `"<N> cards checked, <M> returned rows, <K> failed"` and still exits 1 when a card errored |
 
 `verify_card` returns `(row count, error)` and `setup_pages` returns a `CardReport` (checked, with rows,
-problems), which the tests assert. The live run on the restarted stack ended with:
+problems), which the tests assert. The container-name pattern in the README (`jff_<service>_1`) is the
+list in section 1 of this file, and `compose.yaml` line 6 is the `name: jff` itself. The live run on the
+restarted demo stack (project `jff`, `podman compose up -d`, four services healthy) ended with:
 
 ```
+python dashboards/setup.py
+Sales overview: http://localhost:3000/dashboard/2 (7 cards)
+... four more page URLs ...
 17 cards checked, 17 returned rows, 0 failed
 ```
 
