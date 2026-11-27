@@ -20,7 +20,7 @@ It runs as six long-running containers plus three one-shot helpers on one Podman
 | The pipeline runs end to end from an empty clone | Clean-room: build 3.8 min, healthy in 1.8 min, seven days generated and processed, dashboard returns 8 dates | T07 section 1 |
 | A 45-day backfill fits the machine | 23.4 min for 45 runs, peak scheduler `anon` 1344 MiB of a 1700 MiB limit, no OOM kill | T04 |
 | Re-running a date changes nothing | Mart hashes identical before and after a re-run, in DuckDB and PostgreSQL | T05 section 4, T06 section 4 |
-| The lake equals the database | Whole tables: 574,838 orders and 1,399,537 lines on both sides; 196 objects over 49 dates | T07 section 8 |
+| The lake equals the database | Whole tables, as of 2026-11-24: 574,838 orders and 1,399,537 lines on both sides; 196 objects over 49 dates (the baseline and the per-day breakdown are in design section 14) | T07 section 8 |
 | The dashboard equals its SQL | 17 of 17 cards return the same rows through the API as their file in `psql` | T06 section 3 |
 | The injected defects are detected | Seven row-level defects match the manifests one to one; nine missing branch-days equal the nine `dropped_branch_ids` | T03 section 3, T06 section 2 |
 | The stack fits its budget while loaded | postgres 165 MB, seaweedfs 326.8 MB, metabase 1.357 GB, api-server 331.8 MB, scheduler 1.077 GB, dag-processor 205.8 MB | T06 section 6 |
@@ -80,5 +80,6 @@ demo, do three things in this order:
    only finding class still open.
 2. **Turn the dashboard date filter into a Metabase parameter** (17 cards carry a fixed date today,
    `docs/later.md`), so a different dataset is a dropdown rather than 17 edits.
-3. **Add M9, M14 and M18 if the rubric needs 18 of 18**, starting with M18 (`fact_dq_daily`), which is the
-   only one that needs a new gold table.
+3. **Add M9, M14 and M18 if the project should deliver all 18 metrics it defined**, starting with M18
+   (`fact_dq_daily`), which is the only one that needs a new gold table. The rubric does not name a
+   metric count; the 18 comes from `docs/data-model.md`.

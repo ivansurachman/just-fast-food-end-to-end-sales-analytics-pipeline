@@ -250,6 +250,10 @@ to this table instead of repeating a number, so moving the window is one edit.
 | Orders (`fact_order` and `silver_orders`) | **574838** |
 | Order lines (`fact_order_item` and `silver_order_items`) | **1399537** |
 
+As of 2026-11-24: 49 lake dates through 2026-11-17; one demo day (2026-11-17) was added by T07 item 7 on
+top of the 47-day baseline, which is why the table above reads 48 dashboard days. Measurement:
+`docs/verification/T07-hardening.md` section 8.
+
 The window is bounded by the DAG's `start_date` and `end_date` (`dags/jff_daily.py`). Moving it means
 generating the new days, changing those two dates and re-running the backfill; no other file hardcodes
 a count. Moving the **start** also means replacing the `order_date >= date '2026-10-01'` filter that

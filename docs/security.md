@@ -8,22 +8,23 @@ secret in git, a role that can write) and, second, the supply chain (pinned pack
 
 | Area | How |
 |---|---|
-| Network exposure | Every published port is bound to `127.0.0.1` in `compose.yaml`: Postgres (default 5432, 5433 on Ivan's machine because a native server holds 5432), SeaweedFS 8333, the filer 8888, Airflow 8080, Metabase 3000. Measured on Windows on 2026-11-24, see below |
-
-**Loopback evidence (2026-11-24, Windows).** `podman ps` prints every published port as
-`127.0.0.1:<host>->...`. `netstat -ano` shows 3000, 5433, 8080, 8333 and 8888 in state `LISTENING` only
-on `127.0.0.1`, all owned by one process, the Podman port forwarder (PID 15320 at that time; the PID
-changes). `Test-NetConnection` to the machine's own LAN address (192.168.18.138, Wi-Fi) returned `False`
-on all five ports while `127.0.0.1` returned `True` on all five. `Get-NetTCPConnection -State Listen`
-is the PowerShell view and listed the same five on `127.0.0.1` when re-run on 2026-11-24; Ivan's earlier
-attempt with it returned nothing for these ports, which is why `netstat` is the evidence recorded here.
-This was not tested from another device.
+| Network exposure | Every published port is bound to `127.0.0.1` in `compose.yaml`: Postgres (default 5432, 5433 on Ivan's machine because a native server holds 5432), SeaweedFS 8333, the filer 8888, Airflow 8080, Metabase 3000. Measured on Windows on 2026-11-24, see "Loopback evidence" below |
 | Database roles | One Postgres instance, three databases (`airflow`, `metabase`, `analytics`), one role each. Metabase reads the marts as `analytics_ro`, created by `infra/postgres/create-analytics-ro.sh` with `SELECT` only, refreshed on every `up`, and `ALTER DEFAULT PRIVILEGES` covers the tables the loader creates later |
 | Secrets | Only in `.env`, which is gitignored; `.env.example` carries placeholders. `tools/gen_env.py` generates fresh values (a valid Fernet key, alphanumerics for the S3 keys, tokens for the passwords) and refuses to overwrite. `tools/check_secrets.py` searches every commit for every value in `.env`: **`secrets in git: NONE`** on 2026-11-23, and it also fails if a `.env`, `.pem`, `.key`, `.p12` or `id_rsa*` file ever entered history |
 | Privilege escalation | `security_opt: ["no-new-privileges:true"]` on all nine services, applied and read back with `podman inspect` (`HostConfig.SecurityOpt = [no-new-privileges]`) |
 | Blast radius | `mem_limit` on every container, 5600 MB in total against a 7.6 GiB VM, so one runaway service cannot take the machine's memory |
 | Supply chain | Every image, Python package and GitHub Action pinned to a release older than 14 days (`docs/versions.md`); `pipelines/constraints.txt` and `generator/constraints*.txt` are the single sources; CI installs exactly those |
 | Code access to data | The pipeline writes through dbt and `load_marts`; Metabase never writes. `publish_parquet` opens DuckDB read-only |
+
+### Loopback evidence (2026-11-24, Windows)
+
+`podman ps` prints every published port as `127.0.0.1:<host>->...`. `netstat -ano` shows 3000, 5433,
+8080, 8333 and 8888 in state `LISTENING` only on `127.0.0.1`, all owned by one process, the Podman port
+forwarder (PID 15320 at that time; the PID changes). `Test-NetConnection` to the machine's own LAN address
+returned `False` on all five ports while `127.0.0.1` returned `True` on all five.
+`Get-NetTCPConnection -State Listen` is the PowerShell view and listed the same five on `127.0.0.1` when
+re-run on 2026-11-24; Ivan's earlier attempt with it returned nothing for these ports, which is why
+`netstat` is the evidence recorded here. This was not tested from another device.
 
 ## What is not protected
 
@@ -95,10 +96,11 @@ CRITICAL only, 2026-11-23.
 | `jff-airflow:3.3.2` (from `apache/airflow:3.3.2-python3.12`) | 342 | 23 | `aiohttp` (22 HIGH), `rsync` (20 HIGH), the `krb5` and Perl packages, and the CRITICALs: `perl*` (12), `certifi` (2), `uv` (2), `authlib`, `libsqlite3-0`, `libbrotli1`, `zlib1g`, `openssh-client`, `libxml2`, `sqlite3` |
 
 No image tag was changed in this task. To act on this, the candidates are newer patch tags, with the
-release dates recorded in `docs/versions.md`: Postgres 18.6 (2026-11-06), Metabase v0.65.6 (2026-11-18)
-and SeaweedFS 4.53 (2026-11-08) were too new for the 14-day rule on 2026-11-23, and they were not
-scanned. A newer Airflow 3.3.x patch has **not been verified to exist**. Recorded here for Ivan to
-decide.
+release dates recorded in `docs/versions.md`. On 2026-11-23, when the scans ran, Postgres 18.6
+(2026-11-06) and SeaweedFS 4.53 (2026-11-08) were 17 and 15 days old: old enough for the 14-day rule,
+but neither was scanned, because this task does not move image versions. Only Metabase v0.65.6
+(2026-11-18) was 5 days old and still too new. A newer Airflow 3.3.x patch has **not been verified to
+exist**. Recorded here for Ivan to decide.
 
 ## Decision on image and base-image advisories
 

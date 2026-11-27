@@ -187,6 +187,37 @@ The reviewer found one wrong number and two wrong citations; all six findings ar
 The diagram was re-rendered after the label change and still carries all nine compose services and all
 seven DAG tasks.
 
+## Six documentation fixes (2026-11-27)
+
+Ivan asked for six corrections, with one constraint: no Trivy or pip-audit number may change.
+
+| # | File | Change |
+|---|---|---|
+| 1 | `docs/security.md` | "Loopback evidence" moved out of the "What is protected" table into a subsection below it; the table is one contiguous block again |
+| 2 | `docs/security.md` | The candidate-tag sentence now reads the day counts at scan time: Postgres 18.6 is 17 days, SeaweedFS 4.53 is 15 days (both older than 14, neither scanned), Metabase v0.65.6 is 5 days and still too new. The dates match `docs/versions.md` |
+| 3 | `docs/security.md` | The LAN IP and the words "Wi-Fi" are gone; the text says "the machine's own LAN address" |
+| 4 | `docs/pipeline-design.md` section 14 | Added the "as of 2026-11-24" line about 49 lake dates and the demo day that T07 item 7 added; the table numbers are unchanged |
+| 5 | `docs/conclusion.md` | 574,838 / 1,399,537 / 196 / 49 now carry "as of 2026-11-24" and point at section 14 for the baseline |
+| 6 | `docs/conclusion.md` | "if the rubric needs 18 of 18" became "if the project should deliver all 18 metrics it defined". The rubric does not name a metric count; the 18 comes from `docs/data-model.md` |
+
+`git diff --stat` before this section was added:
+
+```
+ docs/conclusion.md      |  7 ++++---
+ docs/pipeline-design.md |  4 ++++
+ docs/security.md        | 30 ++++++++++++++++--------------
+ 3 files changed, 24 insertions(+), 17 deletions(-)
+```
+
+Checks run for these fixes:
+
+- Table contiguity: start line 9, end line 17, 9 row lines, 0 blank lines inside.
+- `Select-String` for `192.168` and `Wi-Fi` in `docs/security.md`: no matches.
+- Day counts on 2026-11-23, computed with `python -c`: 17, 15 and 5 days (older than 14 only for the
+  first two).
+- `git diff` of the three files filtered for `216`, `342`, `108`, `CRITICAL`, `HIGH |`: no changed line
+  carries a scan number.
+
 ## Numbers and their sources
 
 Every number in the README and in the conclusion points at one of: `docs/pipeline-design.md` section 14
