@@ -1,0 +1,110 @@
+"""dashboards.setup: the mart pre-check, the per-card run, and the pages that report a failure."""
+
+from __future__ import annotations
+
+import pytest
+
+from dashboards import setup
+
+
+class FakeMetabase(setup.Metabase):
+    """Metabase with every HTTP call replaced by a canned answer keyed by (method, path)."""
+
+    def __init__(self, answers: dict[tuple[str, str], object]) -> None:
+        super().__init__()
+        self.answers = answers
+        self.calls: list[tuple[str, str]] = []
+
+    def request(
+        self, method: str, path: str, payload: dict[str, object] | None = None
+    ) -> tuple[int, object]:
+        self.calls.append((method, path))
+        return 200, self.answers[(method, path)]
+
+
+def test_mart_table_exists_true_when_metabase_says_so() -> None:
+    client = FakeMetabase({("POST", "/dataset"): {"data": {"rows": [[True]]}}})
+
+    assert setup.mart_table_exists(client, 2) is True
+    assert client.calls == [("POST", "/dataset")]
+
+
+def test_mart_table_exists_false_when_the_table_is_missing() -> None:
+    client = FakeMetabase({("POST", "/dataset"): {"data": {"rows": [[False]]}}})
+
+    assert setup.mart_table_exists(client, 2) is False
+
+
+def test_verify_card_accepts_a_completed_query() -> None:
+    client = FakeMetabase(
+        {("POST", "/card/7/query"): {"status": "completed", "data": {"rows": []}}}
+    )
+
+    assert setup.verify_card(client, "Net sales per day", 7) is None
+
+
+def test_verify_card_returns_the_error_text() -> None:
+    answer = {"status": "failed", "error": "relation mart_sales_day_branch_channel does not exist"}
+    client = FakeMetabase({("POST", "/card/7/query"): answer})
+
+    assert setup.verify_card(client, "Net sales per day", 7) == answer["error"]
+
+
+def test_verify_card_turns_an_http_error_into_text() -> None:
+    class Broken(FakeMetabase):
+        def request(
+            self, method: str, path: str, payload: dict[str, object] | None = None
+        ) -> tuple[int, object]:
+            raise RuntimeError("POST /card/7/query -> 400: bad query")
+
+    assert "400" in str(setup.verify_card(Broken({}), "Net sales per day", 7))
+
+
+def test_setup_pages_names_the_card_that_fails() -> None:
+    failing = ("POST", "/card/2/query")
+    answers: dict[tuple[str, str], object] = {
+        ("POST", "/card/1/query"): {"status": "completed", "data": {"rows": []}},
+        failing: {"status": "failed", "error": "boom"},
+        ("PUT", "/dashboard/99"): {},
+    }
+
+    class Client(FakeMetabase):
+        def ensure_card(self, name: str, definition: dict[str, object]) -> int:
+            return 2 if name == "Completed orders" else 1
+
+        def ensure_dashboard(self, page: setup.PageSpec) -> dict[str, object]:
+            return {"id": 99}
+
+    pages, problems = setup.setup_pages(Client(answers), 2)
+
+    assert [name for name, _error in problems] == ["Completed orders"]
+    assert problems[0][1] == "boom"
+    assert pages[0][1] == 99
+
+
+def test_main_stops_before_the_cards_when_the_mart_is_missing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Client(FakeMetabase):
+        def wait_healthy(self, timeout_s: int = 300) -> None:
+            return None
+
+        def setup_token(self) -> str | None:
+            return None
+
+        def login(self, email: str, password: str) -> None:
+            return None
+
+        def database_id(self, name: str, create: dict[str, object] | None) -> int:
+            return 2
+
+    monkeypatch.setattr(
+        setup, "Metabase", lambda: Client({("POST", "/dataset"): {"data": {"rows": [[False]]}}})
+    )
+    monkeypatch.setenv("MB_ADMIN_EMAIL", "admin@example.com")
+    monkeypatch.setenv("MB_ADMIN_PASSWORD", "secret-password")
+
+    code = setup.main(dry_run=False)
+
+    assert code == 1
+    assert "run the backfill first" in capsys.readouterr().out

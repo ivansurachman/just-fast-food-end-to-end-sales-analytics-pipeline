@@ -39,23 +39,20 @@ The DAG only runs days inside `[start_date, end_date]` and only while it is unpa
 matters; the two wrong orders fail silently.
 
 ```
-# 1. the generator writes the day into the raw bucket, manifest last
-podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen generate \
+# 1. the generator writes the day into the raw bucket, manifest last.
+#    `-p <name>` belongs here too if the stack was started with one.
+podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
     --date 2026-11-18 --scale 0.1 --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
 
 # 2. the DAG must cover the day
 #    edit dags/jff_daily.py: end_date=datetime(2026, 11, 18)   (and start_date stays 2026-10-01)
-podman exec jff_airflow-scheduler_1 airflow dags list-import-errors    # must stay empty
+podman compose exec -T airflow-scheduler airflow dags list-import-errors    # must stay empty
 
-# 3. the DAG must be unpaused
-podman exec jff_airflow-scheduler_1 airflow dags unpause jff_daily
+# 3. run the day and wait for it: unpause, backfill, poll, then pause (the script does all four)
+python tools/run_backfill.py --from-date 2026-11-18 --to-date 2026-11-18
 
-# 4. trigger the day: the play button in the UI, or the same thing from the CLI
-podman exec jff_airflow-scheduler_1 airflow backfill create \
-    --dag-id jff_daily --from-date 2026-11-18 --to-date 2026-11-18
-
-# 5. watch the seven tasks and then the dashboard
-podman exec jff_airflow-scheduler_1 airflow tasks states-for-dag-run jff_daily \
+# 4. watch the seven tasks and then the dashboard
+podman compose exec -T airflow-scheduler airflow tasks states-for-dag-run jff_daily \
     "backfill__2026-11-18T00:00:00+00:00"
 ```
 
@@ -70,7 +67,8 @@ Then refresh Metabase: the new day is the last point of "Net sales per day" and 
 | Trigger while the DAG is paused | The run waits at `queued` with zero tasks until the DAG is unpaused |
 | `airflow dags trigger --logical-date` for a day beyond `end_date` | Same empty run as the row above; `airflow backfill create` is the path that works |
 
-The rule of thumb: extend `end_date` first, unpause second, trigger third.
+The rule of thumb: extend `end_date` first, then let `tools/run_backfill.py` unpause, run and pause in
+that order.
 
 ## Questions the mentor will ask
 

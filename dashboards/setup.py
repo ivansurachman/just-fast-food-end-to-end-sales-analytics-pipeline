@@ -4,6 +4,11 @@ Idempotent and *updating*: on a database that is already set up it logs in, reus
 **replaces the SQL of every question** with the files next to this script and rewrites each page's
 cards, so changing a `.sql` file and re-running this script is enough.
 
+Two checks keep a half-built pipeline from looking finished: before creating anything it asks
+Metabase whether the sales mart exists, and stops with "run the backfill first" when it does not;
+after each card is created or updated it runs that card's query, names every card that returns an
+error and exits non-zero at the end.
+
     python dashboards/setup.py            # from the repo root, with the stack up
     python dashboards/setup.py --dry-run  # print what it would do
 
@@ -30,6 +35,7 @@ LOG = logging.getLogger("setup_metabase")
 BASE_URL: Final = "http://localhost:3000"
 DASHBOARD_HOME: Final = Path(__file__).parent
 DATABASE_NAME: Final = "JFF analytics"
+MART_TABLE: Final = "mart_sales_day_branch_channel"
 
 
 @dataclass(frozen=True)
@@ -214,7 +220,7 @@ class Metabase:
         """
         for card in self.search("card"):
             if card.get("name") == name:
-                owned = {
+                owned: dict[str, Any] = {
                     key: definition[key]
                     for key in ("name", "description", "display", "dataset_query")
                     if key in definition
@@ -254,14 +260,58 @@ def card_definition(page: PageSpec, card: CardSpec, database_id: int) -> dict[st
     }
 
 
-def setup_pages(client: Metabase, database_id: int) -> list[tuple[str, int, int]]:
-    """Create or update every page; returns (page name, dashboard id, card count)."""
+def mart_table_exists(client: Metabase, database_id: int) -> bool:
+    """True when the sales mart table exists in the analytics database.
+
+    The check runs through Metabase's own connection, so it needs nothing beyond the standard
+    library and proves the same role the cards will use can see the table.
+    """
+    _, result = client.request(
+        "POST",
+        "/dataset",
+        {
+            "database": database_id,
+            "type": "native",
+            "native": {
+                "query": f"select to_regclass('public.{MART_TABLE}') is not null",
+                "template-tags": {},
+            },
+        },
+    )
+    rows = (result.get("data") or {}).get("rows") or []
+    return bool(rows and rows[0] and rows[0][0])
+
+
+def verify_card(client: Metabase, name: str, card_id: int) -> str | None:
+    """Run one card's query; return the error text, or None when it completes."""
+    try:
+        _, result = client.request("POST", f"/card/{card_id}/query")
+    except RuntimeError as error:
+        return str(error)
+    status = result.get("status")
+    if status != "completed":
+        return str(result.get("error") or status)
+    return None
+
+
+def setup_pages(
+    client: Metabase, database_id: int
+) -> tuple[list[tuple[str, int, int]], list[tuple[str, str]]]:
+    """Create or update every page and run every card.
+
+    Returns (page name, dashboard id, card count) per page and the (card name, error) pairs of cards
+    whose query does not run.
+    """
     pages: list[tuple[str, int, int]] = []
+    problems: list[tuple[str, str]] = []
     for page in PAGES:
-        card_ids = [
-            client.ensure_card(card.name, card_definition(page, card, database_id))
-            for card in page.cards
-        ]
+        card_ids: list[int] = []
+        for card in page.cards:
+            card_id = client.ensure_card(card.name, card_definition(page, card, database_id))
+            card_ids.append(card_id)
+            error = verify_card(client, card.name, card_id)
+            if error:
+                problems.append((card.name, error))
         dashboard = client.ensure_dashboard(page)
         dashcards = [
             {
@@ -279,7 +329,7 @@ def setup_pages(client: Metabase, database_id: int) -> list[tuple[str, int, int]
         client.request("PUT", f"/dashboard/{dashboard['id']}", {"dashcards": dashcards})
         LOG.info("dashboard %s (id %s) has %d cards", page.name, dashboard["id"], len(dashcards))
         pages.append((page.name, int(dashboard["id"]), len(dashcards)))
-    return pages
+    return pages, problems
 
 
 def main(dry_run: bool) -> int:
@@ -321,8 +371,21 @@ def main(dry_run: bool) -> int:
         },
     )
 
-    for name, dashboard_id, cards in setup_pages(client, database_id):
+    if not mart_table_exists(client, database_id):
+        print(
+            f"the analytics table {MART_TABLE} does not exist in PostgreSQL: "
+            "run the backfill first (python tools/run_backfill.py --from-date ... --to-date ...)"
+        )
+        return 1
+
+    pages, problems = setup_pages(client, database_id)
+    for name, dashboard_id, cards in pages:
         print(f"{name}: {BASE_URL}/dashboard/{dashboard_id} ({cards} cards)")
+    for name, error in problems:
+        print(f"card {name} failed: {error}")
+    if problems:
+        print(f"{len(problems)} card(s) returned an error; the dashboards are incomplete")
+        return 1
     return 0
 
 

@@ -23,4 +23,4 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["pipelines/tests"]
+testpaths = ["pipelines/tests", "tools/tests", "dashboards/tests"]

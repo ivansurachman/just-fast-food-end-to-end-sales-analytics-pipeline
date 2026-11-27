@@ -58,45 +58,56 @@ Tested on Windows 11 Home with Podman 6.1.4 (rootful machine, WSL2 backend) and 
 `podman-compose` 1.6.0. Nothing else has been run.
 
 Prerequisites: Podman with a WSL2 machine, a `python` on PATH (the host has 3.15.1; the containers and CI
-use 3.12), and about 6 GB of free memory for the stack.
+use 3.12), and about 6 GB of free memory for the stack. `podman machine list` can report 2 GiB of memory
+while the VM really has about 7.6 GiB; `podman machine ssh free -m` shows the actual total (about 7.8 GB).
 
 ```
 git clone https://github.com/ivansurachman/just-fast-food-end-to-end-sales-analytics-pipeline.git
 cd just-fast-food-end-to-end-sales-analytics-pipeline
 
-# 1. Python first: gen_env.py is standard library only
-python tools/gen_env.py                 # writes .env, prints names, never values
+# 1. Python first: gen_env.py is standard library only. It writes .env with LF line endings and picks
+#    the Postgres host port for the machine (5432 when free, 5433 when a native PostgreSQL already
+#    listens there); --postgres-port overrides the choice. Do not edit .env with a tool that rewrites
+#    line endings: an editor that saves CRLF, or `Set-Content -NoNewline`, joins every line into one.
+python tools/gen_env.py
 
-# 2. If a native PostgreSQL already holds 5432, set POSTGRES_HOST_PORT=5433 in .env
-#    (the containers always reach Postgres as postgres:5432)
-
-# 3. Build and start
+# 2. Build and start
 podman compose build --no-cache
 podman compose up -d
 podman compose ps                       # wait for healthy
 
-# 4. Dimensions once, then the fact days, inside the scheduler
-podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen dim all \
+# 3. Dimensions once, then seven fact days, inside the scheduler. `podman compose exec` takes the
+#    service name, so the container name never appears; if you started the stack with `-p <name>`,
+#    add the same `-p <name>` to every `podman compose` command.
+podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen dim all \
     --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
-podman exec jff_airflow-scheduler_1 /opt/venvs/jff/bin/jff-gen generate \
-    --start 2026-10-03 --end 2026-10-09 --scale 0.02 \
+podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
+    --start 2026-10-01 --end 2026-10-07 --scale 0.02 \
     --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
 
-# 5. Point the DAG at the days that exist (start_date and end_date in dags/jff_daily.py), then run them
-podman exec jff_airflow-scheduler_1 airflow dags unpause jff_daily
-podman exec jff_airflow-scheduler_1 airflow backfill create \
-    --dag-id jff_daily --from-date 2026-10-03 --to-date 2026-10-09
-podman exec jff_airflow-scheduler_1 airflow dags pause jff_daily
+# 4. Run those seven days and wait for them. The script unpauses the DAG, creates the backfill, polls
+#    every 15 seconds until every run in the range is finished (45 minutes at most), and only then
+#    pauses the DAG. Pausing earlier stops the scheduler mid-backfill without an error.
+python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07
 
-# 6. Dashboards
-python dashboards/setup.py              # creates the connection, 17 cards and 5 pages; prints one URL per page
+# 5. Dashboards. setup.py stops with "run the backfill first" when the marts are empty, and runs every
+#    card after creating it.
+python dashboards/setup.py
 ```
 
 Then open `http://localhost:3000` (Metabase, the admin from `.env`), `http://localhost:8080` (Airflow) and
-`http://127.0.0.1:8888/buckets/` (the SeaweedFS file browser). Every step ran in the T07 clean-room on
-2026-11-23; the order below is the corrected one, because that run needed two attempts — the dimensions
-were missing at first, and the DAG boundary had to be pointed at the days that exist. Report:
-`docs/verification/T07-hardening.md` section 1.
+`http://127.0.0.1:8888/buckets/` (the SeaweedFS file browser).
+
+The seven-day quick start exercises the flow, not the capacity: it proves that a day turns into rows on a
+dashboard. The capacity numbers — backfill durations, memory per container, row counts — are in
+`docs/verification/T04-marts.md`, `T05-parquet.md` and section 14 of `docs/pipeline-design.md`.
+
+`airflow dags pause` and `airflow dags unpause` print the status from **before** the change; the current
+state is in `airflow dags details jff_daily` (`is_paused`).
+
+Every step above ran in the T07 clean-room on 2026-11-23; the order is the corrected one, because that
+run needed two attempts — the dimensions were missing at first, and the DAG boundary had to match the
+days that exist. Report: `docs/verification/T07-hardening.md` section 1.
 
 ### Run one new day
 
@@ -242,7 +253,8 @@ Every limitation below has a report behind it.
 - **Two stacks cannot run at once.** The hard limits sum to 5600 MB in a 7.6 GiB VM; the clean-room had to
   stop the demo stack first (T07 section 1).
 - **Host port 5432 is often taken.** A native Windows PostgreSQL holds it on Ivan's machine, so
-  `POSTGRES_HOST_PORT=5433` (design section 9).
+  `tools/gen_env.py` writes `POSTGRES_HOST_PORT=5433` when 5432 is listening (`--postgres-port` forces a
+  value; design section 9).
 - **The Podman machine is rootful** and there are **no backups** and **no TLS**; `docs/security.md` lists
   what that does and does not expose.
 - **CI does not prove the pipeline works end to end.** The GitHub workflow runs lint, types and unit tests;

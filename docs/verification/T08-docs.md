@@ -102,9 +102,9 @@ below.
 
 ### 1. Clean clone on Windows
 
-**Not run by me**: the task gives this check to Ivan. The runbook he needs is "Run it on Windows with
-Podman" in the README, the same six steps that passed on 2026-11-23 (T07 section 1). Every place he gets
-stuck becomes a documentation fix here.
+Run by Ivan on 2026-11-27 (`C:\dev\jff-readme-test-report.md`, clone `C:\dev\jff-readme-test`). The run
+reached the dashboard only after a manual recovery; the six findings are handled in "README test
+follow-up" below. The re-test with the fixed README has not been done yet.
 
 ### 2. `git grep -n "verify"` in `docs/` and `README.md`
 
@@ -217,6 +217,75 @@ Checks run for these fixes:
   first two).
 - `git diff` of the three files filtered for `216`, `342`, `108`, `CRITICAL`, `HIGH |`: no changed line
   carries a scan number.
+
+## README test follow-up (2026-11-27)
+
+Ivan's clean-clone test (`C:\dev\jff-readme-test-report.md`) found that the README as written does not
+reach a dashboard: the container name is project-dependent, `.env` editing is undocumented, and the
+`pause` line stops the backfill before the marts are loaded. Six fixes, in the report's language.
+
+| Report item | Fix |
+|---|---|
+| #3 `backfill create` is asynchronous and the next line pauses the DAG | New `tools/run_backfill.py`: unpause, backfill, poll `airflow dags list-runs` every 15 s until every run in the range is finished (45 min budget, progress each poll), then pause; non-zero exit on failure or timeout, printing the failed run and its task states. The README step is now one call |
+| #1 container names depend on the project | `podman compose exec -T airflow-scheduler ...` replaces `podman exec jff_airflow-scheduler_1 ...` in the README and the demo script, and both say to add `-p <name>` when the stack was started with one |
+| #2, `.env` | `tools/gen_env.py --postgres-port` writes the port, and without the flag it probes 127.0.0.1:5432 and writes 5433 with a reason when the port is taken. The file is written with LF endings (`write_text(..., newline="\n")`); the README warns that an editor which saves CRLF (or `Set-Content -NoNewline`) joins the lines |
+| #5 "Point the DAG at the days that exist" | removed. The quick start generates 2026-10-01 .. 2026-10-07, inside the committed `start_date` (2026-10-01) and `end_date` (2026-11-17), so no DAG edit is needed |
+| #4 pause/unpause print the old status | one sentence in the README: they print the status from before the change, `airflow dags details` shows the current one |
+| #6 `podman machine list` shows 2 GiB | one sentence: the VM really has about 7.6 GiB, `podman machine ssh free -m` shows it |
+| #6 dashboard with empty marts | `dashboards/setup.py` now asks Metabase whether `mart_sales_day_branch_channel` exists before creating cards, stops with "run the backfill first" and exits 1; after each card it runs the query, names every card that errors and exits 1 at the end |
+
+Evidence from this session:
+
+```
+# the compose form works on this machine (podman-compose 1.6.0, project jff)
+podman compose exec -T airflow-scheduler airflow version
+3.3.2            exit 0
+
+# one day, then the quick-start range, through the new script
+python tools/run_backfill.py --from-date 2026-11-16 --to-date 2026-11-16 --interval 3
+unpause jff_daily / backfill 2026-11-16 .. 2026-11-16 (1 runs) / pause jff_daily
+done: 1 runs success            exit 0
+
+python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07 --interval 3
+unpause jff_daily / backfill 2026-10-01 .. 2026-10-07 (7 runs) / pause jff_daily
+done: 7 runs success            exit 0
+
+# gen_env picks the host port and writes LF
+python tools/gen_env.py --out %TEMP%\env-check
+port      POSTGRES_HOST_PORT=5433 (5432 is already in use on the host)
+wrote C:\Users\acer-\AppData\Local\Temp\opencode\t08-env-check: 12 generated, 5 copied
+bytes: crlf=0, ends_with_lf=True
+
+# the dashboard script now runs every card and says so
+python dashboards/setup.py
+Sales overview: http://localhost:3000/dashboard/2 (7 cards)
+... five pages ...
+exit 0 in 141.7 s
+```
+
+Checks (local run of every CI job):
+
+```
+ruff check .            All checks passed!
+ruff format --check .   65 files already formatted
+mypy                    Success: no issues found in 13 source files
+pytest -q               35 passed (32 without the SeaweedFS credentials)
+generator: pytest 41 passed, ruff/mypy clean
+pip-audit -r pipelines/constraints.txt   No known vulnerabilities found
+pip-audit -r generator/constraints.txt   No known vulnerabilities found
+```
+
+Unit tests added for the two behaviours the report needed: `tools/tests/test_gen_env.py` (LF endings,
+`--postgres-port`, auto-detect on a listening 5432, refusal to overwrite) and
+`dashboards/tests/test_setup.py` (mart check, per-card run, the card that errors is named, `main` stops
+before the cards with "run the backfill first"). `pyproject.toml` now lists the two new test directories.
+
+Not verified: the quick start on a **fresh clone**. When a `catchup=True` DAG is unpaused, the scheduler
+can also queue runs for later dates inside `[start_date, end_date]`; with `max_active_runs=1` a date with
+no manifest holds the slot until its sensor times out. The script only waits for the requested range and
+pauses at the end, so the seven days are created before any later date is picked, but that ordering was
+not re-tested in a new project. If it happens, the script says so after 45 minutes with the run states and
+the failing tasks; it never pauses early.
 
 ## Numbers and their sources
 
