@@ -112,6 +112,7 @@ def test_main_stops_before_the_cards_when_the_mart_is_missing(
     monkeypatch.setattr(setup, "Metabase", lambda: Client({("POST", "/dataset"): missing}))
     monkeypatch.setenv("MB_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("MB_ADMIN_PASSWORD", "secret-password")
+    monkeypatch.setenv("POSTGRES_ANALYTICS_RO_PASSWORD", "secret-password")
 
     code = setup.main(dry_run=False)
 

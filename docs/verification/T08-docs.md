@@ -282,6 +282,10 @@ Unit tests added for the two behaviours the report needed: `tools/tests/test_gen
 `dashboards/tests/test_setup.py` (mart check, per-card run, the card that errors is named, `main` stops
 before the cards with "run the backfill first"). `pyproject.toml` now lists the two new test directories.
 
+CI caught one dependency that the local run hid: the `main` test read `POSTGRES_ANALYTICS_RO_PASSWORD`
+from the developer's `.env` through `load_dotenv()`, which the runner does not have. The test sets it
+itself now, and the whole suite was re-run from a directory without `.env` (39 passed, 3 skipped).
+
 ### The pause guarantee, after review
 
 The first version paused in a `finally`, and a focused review found three paths where that paused too
