@@ -17,9 +17,9 @@ MB_ADMIN_EMAIL=admin@example.com
 
 
 def write_example(tmp_path: Path) -> Path:
-    """A tiny .env.example with one secret, one S3 key and one port."""
+    """A tiny .env.example written with CRLF, so the LF check bites on any operating system."""
     path = tmp_path / ".env.example"
-    path.write_text(EXAMPLE, encoding="utf-8")
+    path.write_bytes(EXAMPLE.replace("\n", "\r\n").encode("utf-8"))
     return path
 
 
@@ -28,6 +28,10 @@ def generate(tmp_path: Path, *extra: str) -> tuple[int, Path]:
     out = tmp_path / ".env"
     code = gen_env.main(["--example", str(write_example(tmp_path)), "--out", str(out), *extra])
     return code, out
+
+
+def test_the_example_really_uses_crlf(tmp_path: Path) -> None:
+    assert b"\r\n" in write_example(tmp_path).read_bytes()
 
 
 def test_writes_lf_line_endings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,13 +1,17 @@
-"""Run one DAG backfill and wait until every run in the range finishes.
+"""Run one DAG backfill and wait until every run it created finishes.
 
     python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07
     python tools/run_backfill.py ... --project jff-readme
 
 The script unpauses the DAG, creates the backfill, polls `airflow dags list-runs` every 15 seconds
-until every run whose logical date is inside the range is `success` or `failed` (45 minutes at
-most), and only then pauses the DAG. Pausing earlier stops the scheduler mid-backfill without an
-error, which is the trap this script exists to close. Exits non-zero when a run failed or the budget
-ran out, after printing the failed run and its task states.
+until every run that the backfill created is `success` or `failed` (45 minutes at most), and only
+then pauses the DAG. Pausing earlier stops the scheduler mid-backfill without an error, which is the
+trap this script exists to close.
+
+It pauses only after it has seen every new run finish. If the backfill or the poll command itself
+fails, the DAG is left unpaused and the script says so, because a backfill may be in flight and a
+pause would stop it. When every date already has a successful run, Airflow reuses it, nothing new
+runs, and the script reports that instead of waiting.
 
 The Airflow commands run through `podman compose exec`, so the container name never appears here:
 the script uses the compose project from the current directory, or the one given with `--project`.
@@ -27,6 +31,7 @@ DAG_ID: Final = "jff_daily"
 SERVICE: Final = "airflow-scheduler"
 TIMEOUT_MINUTES: Final = 45
 INTERVAL_SECONDS: Final = 15
+TERMINAL: Final = frozenset({"success", "failed"})
 ANSI_RESET: Final = "\x1b[0m"
 
 
@@ -64,58 +69,34 @@ def table_rows(lines: list[str], columns: int) -> list[list[str]]:
     return rows
 
 
-def run_states(project: str | None, service: str) -> dict[date, set[str]]:
-    """Every state seen for each logical date.
-
-    A date can have more than one run (a manual run from earlier work, the backfill run now); the
-    date is only as good as its worst run, so they are collected together rather than overwritten.
-    """
+def list_runs(project: str | None, service: str) -> dict[str, tuple[date, str]]:
+    """Every run of the DAG as run_id -> (logical date, state)."""
     lines = airflow(project, service, "dags", "list-runs", DAG_ID)
-    states: dict[date, set[str]] = {}
-    for _dag_id, _run_id, state, _after, logical_date, *_rest in table_rows(lines, 7):
-        day = date.fromisoformat(logical_date[:10])
-        states.setdefault(day, set()).add(state)
-    return states
+    runs: dict[str, tuple[date, str]] = {}
+    for _dag_id, run_id, state, _after, logical_date, *_rest in table_rows(lines, 7):
+        runs[run_id] = (date.fromisoformat(logical_date[:10]), state)
+    return runs
 
 
-def aggregate(states: set[str] | None) -> str:
-    """One word for the date: success when every run succeeded, failed when any failed."""
-    if not states:
-        return "missing"
-    if "failed" in states:
-        return "failed"
-    if states == {"success"}:
-        return "success"
-    return "pending"
-
-
-def failed_tasks(project: str | None, service: str, logical_date: date) -> list[tuple[str, str]]:
-    """Task id and state for every task that did not succeed on the backfill run of one day."""
-    run_id = f"backfill__{logical_date.isoformat()}T00:00:00+00:00"
-    lines = airflow(project, service, "tasks", "states-for-dag-run", DAG_ID, run_id)
-    tasks: list[tuple[str, str]] = []
-    for _dag_id, _logical, task_id, state, *_rest in table_rows(lines, 6):
-        if state != "success":
-            tasks.append((task_id, state))
-    return tasks
-
-
-def wait_for_dates(
+def wait_for_runs(
     project: str | None,
     service: str,
+    run_ids: set[str],
     dates: list[date],
     timeout: timedelta,
     interval: int,
-) -> tuple[bool, dict[date, str]]:
-    """Poll until every date finished; return (all_success, state per date)."""
+) -> tuple[bool, dict[str, str]]:
+    """Poll until every run is `success` or `failed`; return (all_success, state per run).
+
+    A failed run does not end the wait on its own: the other runs of the backfill are still
+    executing, and pausing the DAG here would stop them.
+    """
     deadline = time.monotonic() + timeout.total_seconds()
     while True:
-        seen = run_states(project, service)
-        current = {day: aggregate(seen.get(day)) for day in dates}
-        if all(state == "success" for state in current.values()):
-            return True, current
-        if any(state == "failed" for state in current.values()):
-            return False, current
+        seen = list_runs(project, service)
+        current = {run_id: seen.get(run_id, (None, "missing"))[1] for run_id in run_ids}
+        if current and all(state in TERMINAL for state in current.values()):
+            return all(state == "success" for state in current.values()), current
         if time.monotonic() >= deadline:
             return False, current
         counts = Counter(current.values())
@@ -124,16 +105,34 @@ def wait_for_dates(
         time.sleep(interval)
 
 
-def report_failures(project: str | None, service: str, states: dict[date, str]) -> None:
-    """Print every date that did not succeed and the tasks that stopped it."""
-    for day, state in sorted(states.items()):
+def failed_tasks(project: str | None, service: str, run_id: str) -> list[tuple[str, str]]:
+    """Task id and state for every task that did not succeed on one run."""
+    lines = airflow(project, service, "tasks", "states-for-dag-run", DAG_ID, run_id)
+    tasks: list[tuple[str, str]] = []
+    for _dag_id, _logical, task_id, state, *_rest in table_rows(lines, 6):
+        if state != "success":
+            tasks.append((task_id, state))
+    return tasks
+
+
+def report_failures(
+    project: str | None, service: str, states: dict[str, str], new_runs: dict[str, date]
+) -> None:
+    """Print every run that did not succeed and the tasks that stopped it."""
+    for run_id, state in sorted(states.items(), key=lambda item: new_runs.get(item[0], date.min)):
         if state == "success":
             continue
-        print(f"run {day}: {state}")
+        print(f"run {new_runs.get(run_id)} ({run_id}): {state}")
         if state == "missing":
             continue
-        for task_id, task_state in failed_tasks(project, service, day):
+        for task_id, task_state in failed_tasks(project, service, run_id):
             print(f"  task {task_id}: {task_state}")
+
+
+def pause(project: str | None, service: str) -> None:
+    """Pause the DAG; only call this once no run of the backfill is executing."""
+    print(f"pause {DAG_ID}", flush=True)
+    airflow(project, service, "dags", "pause", DAG_ID)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -167,8 +166,10 @@ def main(argv: list[str] | None = None) -> int:
     ]
     print(f"unpause {DAG_ID}", flush=True)
     airflow(args.project, args.service, "dags", "unpause", DAG_ID)
+
+    before = set(list_runs(args.project, args.service))
+    print(f"backfill {dates[0]} .. {dates[-1]} ({len(dates)} runs)", flush=True)
     try:
-        print(f"backfill {dates[0]} .. {dates[-1]} ({len(dates)} runs)", flush=True)
         airflow(
             args.project,
             args.service,
@@ -181,22 +182,56 @@ def main(argv: list[str] | None = None) -> int:
             "--to-date",
             dates[-1].isoformat(),
         )
-        ok, states = wait_for_dates(
+    except SystemExit:
+        print(
+            f"{DAG_ID} is left unpaused: the backfill was not created and the scheduler may be "
+            "running"
+        )
+        raise
+
+    after = list_runs(args.project, args.service)
+    new_runs = {run_id: runs[0] for run_id, runs in after.items() if run_id not in before}
+    if not new_runs:
+        done = {
+            day for run_id, (day, state) in after.items() if day in dates and state == "success"
+        }
+        awaiting = [day for day in dates if day not in done]
+        if not awaiting:
+            print(
+                f"nothing to run: {len(dates)} dates already have a successful run "
+                "(Airflow reuses it)"
+            )
+            pause(args.project, args.service)
+            return 0
+        print(f"no run was created for {', '.join(str(day) for day in awaiting)}")
+        pause(args.project, args.service)
+        return 1
+
+    try:
+        ok, states = wait_for_runs(
             args.project,
             args.service,
+            set(new_runs),
             dates,
             timedelta(minutes=args.timeout_minutes),
             args.interval,
         )
-    finally:
-        print(f"pause {DAG_ID}", flush=True)
-        airflow(args.project, args.service, "dags", "pause", DAG_ID)
+    except SystemExit:
+        print(
+            f"{DAG_ID} is left unpaused: the run states could not be read while a backfill may be "
+            "running"
+        )
+        raise
 
+    pause(args.project, args.service)
     if ok:
-        print(f"done: {len(dates)} runs success", flush=True)
+        print(f"done: {len(new_runs)} runs success", flush=True)
         return 0
-    report_failures(args.project, args.service, states)
-    print(f"failed: not every run succeeded within {args.timeout_minutes} minutes", flush=True)
+    report_failures(args.project, args.service, states, new_runs)
+    print(
+        f"failed: not every run finished successfully within {args.timeout_minutes} minutes",
+        flush=True,
+    )
     return 1
 
 

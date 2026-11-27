@@ -23,16 +23,26 @@ class FakeMetabase(setup.Metabase):
 
 
 def test_mart_table_exists_true_when_metabase_says_so() -> None:
-    client = FakeMetabase({("POST", "/dataset"): {"data": {"rows": [[True]]}}})
+    answer = {"status": "completed", "data": {"rows": [[True]]}}
+    client = FakeMetabase({("POST", "/dataset"): answer})
 
     assert setup.mart_table_exists(client, 2) is True
     assert client.calls == [("POST", "/dataset")]
 
 
 def test_mart_table_exists_false_when_the_table_is_missing() -> None:
-    client = FakeMetabase({("POST", "/dataset"): {"data": {"rows": [[False]]}}})
+    answer = {"status": "completed", "data": {"rows": [[False]]}}
+    client = FakeMetabase({("POST", "/dataset"): answer})
 
     assert setup.mart_table_exists(client, 2) is False
+
+
+def test_mart_table_check_raises_on_a_failed_query() -> None:
+    answer = {"status": "failed", "error": "connection refused"}
+    client = FakeMetabase({("POST", "/dataset"): answer})
+
+    with pytest.raises(RuntimeError, match="connection refused"):
+        setup.mart_table_exists(client, 2)
 
 
 def test_verify_card_accepts_a_completed_query() -> None:
@@ -98,9 +108,8 @@ def test_main_stops_before_the_cards_when_the_mart_is_missing(
         def database_id(self, name: str, create: dict[str, object] | None) -> int:
             return 2
 
-    monkeypatch.setattr(
-        setup, "Metabase", lambda: Client({("POST", "/dataset"): {"data": {"rows": [[False]]}}})
-    )
+    missing = {"status": "completed", "data": {"rows": [[False]]}}
+    monkeypatch.setattr(setup, "Metabase", lambda: Client({("POST", "/dataset"): missing}))
     monkeypatch.setenv("MB_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("MB_ADMIN_PASSWORD", "secret-password")
 

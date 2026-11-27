@@ -278,6 +278,10 @@ def mart_table_exists(client: Metabase, database_id: int) -> bool:
             },
         },
     )
+    if result.get("status") != "completed":
+        # A broken connection and a missing table look alike in the rows; do not report the second
+        # when the first is what happened.
+        raise RuntimeError(f"the mart check failed: {result.get('error') or result.get('status')}")
     rows = (result.get("data") or {}).get("rows") or []
     return bool(rows and rows[0] and rows[0][0])
 

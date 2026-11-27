@@ -243,12 +243,14 @@ podman compose exec -T airflow-scheduler airflow version
 
 # one day, then the quick-start range, through the new script
 python tools/run_backfill.py --from-date 2026-11-16 --to-date 2026-11-16 --interval 3
-unpause jff_daily / backfill 2026-11-16 .. 2026-11-16 (1 runs) / pause jff_daily
-done: 1 runs success            exit 0
+unpause jff_daily / backfill 2026-11-16 .. 2026-11-16 (1 runs)
+nothing to run: 1 dates already have a successful run (Airflow reuses it)
+pause jff_daily                 exit 0
 
 python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07 --interval 3
-unpause jff_daily / backfill 2026-10-01 .. 2026-10-07 (7 runs) / pause jff_daily
-done: 7 runs success            exit 0
+unpause jff_daily / backfill 2026-10-01 .. 2026-10-07 (7 runs)
+nothing to run: 7 dates already have a successful run (Airflow reuses it)
+pause jff_daily                 exit 0
 
 # gen_env picks the host port and writes LF
 python tools/gen_env.py --out %TEMP%\env-check
@@ -267,9 +269,9 @@ Checks (local run of every CI job):
 
 ```
 ruff check .            All checks passed!
-ruff format --check .   65 files already formatted
+ruff format --check .   66 files already formatted
 mypy                    Success: no issues found in 13 source files
-pytest -q               35 passed (32 without the SeaweedFS credentials)
+pytest -q               42 passed (39 without the SeaweedFS credentials)
 generator: pytest 41 passed, ruff/mypy clean
 pip-audit -r pipelines/constraints.txt   No known vulnerabilities found
 pip-audit -r generator/constraints.txt   No known vulnerabilities found
@@ -280,12 +282,33 @@ Unit tests added for the two behaviours the report needed: `tools/tests/test_gen
 `dashboards/tests/test_setup.py` (mart check, per-card run, the card that errors is named, `main` stops
 before the cards with "run the backfill first"). `pyproject.toml` now lists the two new test directories.
 
+### The pause guarantee, after review
+
+The first version paused in a `finally`, and a focused review found three paths where that paused too
+early. All three are fixed and covered by tests:
+
+| Path | Before | Now |
+|---|---|---|
+| One run fails while another is still running | the loop returned on the first `failed`, and the `finally` paused a live backfill | the loop continues until every run it created is terminal; the failure decides the exit code, not the moment |
+| `list-runs` itself fails mid-poll | `SystemExit` from inside the loop, `finally` paused a live backfill | the pause is skipped and the script says the DAG is left unpaused |
+| A range that already succeeded | an old successful run counted, so it exited 0 before the new runs had run | the run ids are snapshotted before `backfill create`; only the new runs are waited for, and when Airflow reuses the old ones the script says "nothing to run" |
+
+`tools/tests/test_run_backfill.py` proves the ordering: the wait keeps polling after a failure and
+while a run is `running`; `main` pauses only as its last command; a poll failure leaves the DAG
+unpaused; a reused range is reported without waiting. Live evidence for the waiting path itself is not
+reproduced on the demo stack, because every date in its window already has a successful run; the run
+above shows the reuse message instead.
+
 Not verified: the quick start on a **fresh clone**. When a `catchup=True` DAG is unpaused, the scheduler
 can also queue runs for later dates inside `[start_date, end_date]`; with `max_active_runs=1` a date with
-no manifest holds the slot until its sensor times out. The script only waits for the requested range and
-pauses at the end, so the seven days are created before any later date is picked, but that ordering was
-not re-tested in a new project. If it happens, the script says so after 45 minutes with the run states and
-the failing tasks; it never pauses early.
+no manifest holds the slot until its sensor times out. The script snapshots the run ids right after
+`backfill create` and waits only for those, so a later date cannot be mistaken for one of the seven, but
+the ordering in a brand-new project was not re-tested. If it happens, the script reports the run states
+and the failing tasks when the budget runs out; it never pauses early.
+
+One limit of the LF guard: the test now writes its `.env.example` with CRLF bytes, so the assertion bites
+on Linux CI as well, but the real failure the tester hit (an editor or `Set-Content -NoNewline` joining
+the lines) can only be reproduced on Windows; that part is documented in the README, not tested.
 
 ## Numbers and their sources
 
