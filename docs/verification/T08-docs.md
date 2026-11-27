@@ -270,8 +270,8 @@ Checks (local run of every CI job):
 ```
 ruff check .            All checks passed!
 ruff format --check .   66 files already formatted
-mypy                    Success: no issues found in 13 source files
-pytest -q               42 passed (39 without the SeaweedFS credentials)
+mypy                    Success: no issues found in 24 source files
+pytest -q               45 passed (42 without the SeaweedFS credentials)
 generator: pytest 41 passed, ruff/mypy clean
 pip-audit -r pipelines/constraints.txt   No known vulnerabilities found
 pip-audit -r generator/constraints.txt   No known vulnerabilities found
@@ -280,7 +280,8 @@ pip-audit -r generator/constraints.txt   No known vulnerabilities found
 Unit tests added for the two behaviours the report needed: `tools/tests/test_gen_env.py` (LF endings,
 `--postgres-port`, auto-detect on a listening 5432, refusal to overwrite) and
 `dashboards/tests/test_setup.py` (mart check, per-card run, the card that errors is named, `main` stops
-before the cards with "run the backfill first"). `pyproject.toml` now lists the two new test directories.
+before the cards with "run the backfill first"). `pyproject.toml` now lists the two new test directories,
+and mypy checks `tools` and `dashboards` as well (24 source files instead of 13).
 
 CI caught one dependency that the local run hid: the `main` test read `POSTGRES_ANALYTICS_RO_PASSWORD`
 from the developer's `.env` through `load_dotenv()`, which the runner does not have. The test sets it
@@ -288,20 +289,23 @@ itself now, and the whole suite was re-run from a directory without `.env` (39 p
 
 ### The pause guarantee, after review
 
-The first version paused in a `finally`, and a focused review found three paths where that paused too
-early. All three are fixed and covered by tests:
+The first version paused in a `finally`. A focused review found three paths where that paused too
+early, and a second pass found two more in the same code; all five are fixed and covered by tests:
 
 | Path | Before | Now |
 |---|---|---|
 | One run fails while another is still running | the loop returned on the first `failed`, and the `finally` paused a live backfill | the loop continues until every run it created is terminal; the failure decides the exit code, not the moment |
 | `list-runs` itself fails mid-poll | `SystemExit` from inside the loop, `finally` paused a live backfill | the pause is skipped and the script says the DAG is left unpaused |
 | A range that already succeeded | an old successful run counted, so it exited 0 before the new runs had run | the run ids are snapshotted before `backfill create`; only the new runs are waited for, and when Airflow reuses the old ones the script says "nothing to run" |
+| The budget runs out while a run is still going | paused anyway, stopping it | the DAG is left unpaused with the run states, exit 1 |
+| A catchup run starts between the unpause and the backfill | it was not a new run, so it was ignored and paused | live runs for the range dates are added to the wait set |
 
-`tools/tests/test_run_backfill.py` proves the ordering: the wait keeps polling after a failure and
-while a run is `running`; `main` pauses only as its last command; a poll failure leaves the DAG
-unpaused; a reused range is reported without waiting. Live evidence for the waiting path itself is not
-reproduced on the demo stack, because every date in its window already has a successful run; the run
-above shows the reuse message instead.
+`tools/tests/test_run_backfill.py` (8 tests) proves the ordering: the wait keeps polling after a
+failure and while a run is `running`; `main` pauses only as its last command; a poll failure and an
+exhausted budget leave the DAG unpaused; a live catchup run is waited for even when the backfill
+created nothing new; a reused range is reported without waiting; the task-state table is parsed. Live
+evidence for the waiting path itself is not reproduced on the demo stack, because every date in its
+window already has a successful run; the run above shows the reuse message instead.
 
 Not verified: the quick start on a **fresh clone**. When a `catchup=True` DAG is unpaused, the scheduler
 can also queue runs for later dates inside `[start_date, end_date]`; with `max_active_runs=1` a date with

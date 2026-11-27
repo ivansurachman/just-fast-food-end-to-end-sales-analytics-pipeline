@@ -78,7 +78,8 @@ podman compose ps                       # wait for healthy
 
 # 3. Dimensions once, then seven fact days, inside the scheduler. `podman compose exec` takes the
 #    service name, so the container name never appears; if you started the stack with `-p <name>`,
-#    add the same `-p <name>` to every `podman compose` command.
+#    add the same `-p <name>` to every `podman compose` command, and `--project <name>` to
+#    `tools/run_backfill.py`.
 podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen dim all \
     --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
 podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
@@ -87,7 +88,8 @@ podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
 
 # 4. Run those seven days and wait for them. The script unpauses the DAG, creates the backfill, polls
 #    every 15 seconds until every run in the range is finished (45 minutes at most), and only then
-#    pauses the DAG. Pausing earlier stops the scheduler mid-backfill without an error.
+#    pauses the DAG. If a run is still going when the budget runs out, or a command fails, the DAG is
+#    left unpaused and the script says so.
 python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07
 
 # 5. Dashboards. setup.py stops with "run the backfill first" when the marts are empty, and runs every
@@ -305,7 +307,7 @@ dbt/                  staging, silver, gold and mart models, seeds, tests, profi
 dashboards/           setup.py and one SQL file per card, one folder per page
 generator/            the seeded synthetic data generator (its own venv and constraints)
 infra/                Postgres roles, SeaweedFS entrypoints, Airflow init and install scripts
-tools/                gen_env.py, check_secrets.py
+tools/                gen_env.py, run_backfill.py, check_secrets.py
 docs/                 design, data model and dictionary, versions, security, demo script, verification
 sample-data/          seven days at --scale 0.02, byte-identical to a Linux run
 compose.yaml          the six services and three one-shot helpers

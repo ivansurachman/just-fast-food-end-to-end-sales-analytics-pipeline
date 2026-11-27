@@ -120,3 +120,72 @@ def test_main_reports_reused_runs_without_waiting(monkeypatch: pytest.MonkeyPatc
 
     assert code == 0
     assert commands[-1] == ("dags", "pause", "jff_daily")
+
+
+def test_main_leaves_the_dag_unpaused_when_the_budget_runs_out(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    polls: list[int] = []
+
+    def fake_airflow(project: str | None, service: str, *args: str) -> list[str]:
+        commands.append(args)
+        return []
+
+    def fake_list_runs(project: str | None, service: str) -> dict[str, tuple[date, str]]:
+        polls.append(len(polls))
+        return {} if len(polls) == 1 else {RUN: (DAY, "running")}
+
+    monkeypatch.setattr(run_backfill, "airflow", fake_airflow)
+    monkeypatch.setattr(run_backfill, "list_runs", fake_list_runs)
+
+    code = run_backfill.main(
+        ["--from-date", "2026-10-01", "--to-date", "2026-10-01", "--timeout-minutes", "0"]
+    )
+
+    assert code == 1
+    assert ("dags", "pause", "jff_daily") not in commands
+    assert "left unpaused" in capsys.readouterr().out
+
+
+def test_main_waits_for_a_live_catchup_run_when_nothing_new_is_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    polls: list[int] = []
+
+    def fake_airflow(project: str | None, service: str, *args: str) -> list[str]:
+        commands.append(args)
+        return []
+
+    def fake_list_runs(project: str | None, service: str) -> dict[str, tuple[date, str]]:
+        polls.append(len(polls))
+        state = "success" if len(polls) >= 4 else "running"
+        return {OLD_RUN: (DAY, state)}
+
+    monkeypatch.setattr(run_backfill, "airflow", fake_airflow)
+    monkeypatch.setattr(run_backfill, "list_runs", fake_list_runs)
+
+    code = run_backfill.main(
+        ["--from-date", "2026-10-01", "--to-date", "2026-10-01", "--interval", "0"]
+    )
+
+    assert code == 0
+    assert len(polls) >= 4, "the catchup run has to be polled until it finishes"
+    assert commands[-1] == ("dags", "pause", "jff_daily")
+
+
+def test_failed_tasks_reads_the_states_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    table = [
+        "dag_id    | logical_date              | task_id         | state   | start_date | end_date",
+        "==========+===========================+=================+=========+============+========",
+        "jff_daily | 2026-10-01T00:00:00+00:00 | wait_manifest   | success | -          | -",
+        "jff_daily | 2026-10-01T00:00:00+00:00 | dbt_run         | failed  | -          | -",
+        "jff_daily | 2026-10-01T00:00:00+00:00 | load_marts      | upstream_failed | - | -",
+    ]
+    monkeypatch.setattr(run_backfill, "airflow", lambda p, s, *args: table)
+
+    assert run_backfill.failed_tasks(None, "svc", RUN) == [
+        ("dbt_run", "failed"),
+        ("load_marts", "upstream_failed"),
+    ]

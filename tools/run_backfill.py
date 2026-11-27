@@ -8,10 +8,10 @@ until every run that the backfill created is `success` or `failed` (45 minutes a
 then pauses the DAG. Pausing earlier stops the scheduler mid-backfill without an error, which is the
 trap this script exists to close.
 
-It pauses only after it has seen every new run finish. If the backfill or the poll command itself
-fails, the DAG is left unpaused and the script says so, because a backfill may be in flight and a
-pause would stop it. When every date already has a successful run, Airflow reuses it, nothing new
-runs, and the script reports that instead of waiting.
+It pauses only after it has seen every run finish. If the backfill fails, the poll command fails,
+or the budget runs out while a run is still going, the DAG is left unpaused and the script says so,
+because a pause would stop that run. When every date already has a successful run, Airflow reuses
+it, nothing new runs, and the script reports that instead of waiting.
 
 The Airflow commands run through `podman compose exec`, so the container name never appears here:
 the script uses the compose project from the current directory, or the one given with `--project`.
@@ -191,7 +191,15 @@ def main(argv: list[str] | None = None) -> int:
 
     after = list_runs(args.project, args.service)
     new_runs = {run_id: runs[0] for run_id, runs in after.items() if run_id not in before}
-    if not new_runs:
+    # A catchup run for a date in the range can start between the unpause and the backfill. It is
+    # not new to the backfill, but pausing while it runs stops it like pausing the backfill would.
+    live_old = {
+        run_id: day
+        for run_id, (day, state) in after.items()
+        if run_id not in new_runs and day in dates and state not in TERMINAL
+    }
+    targets = {**new_runs, **live_old}
+    if not targets:
         done = {
             day for run_id, (day, state) in after.items() if day in dates and state == "success"
         }
@@ -211,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         ok, states = wait_for_runs(
             args.project,
             args.service,
-            set(new_runs),
+            set(targets),
             dates,
             timedelta(minutes=args.timeout_minutes),
             args.interval,
@@ -223,14 +231,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         raise
 
+    if any(state not in TERMINAL for state in states.values()):
+        # The budget ran out with work in flight: pausing now would stop it without an error.
+        print(
+            f"{DAG_ID} is left unpaused: the {args.timeout_minutes}-minute budget ran out with "
+            f"{sum(state not in TERMINAL for state in states.values())} run(s) still going"
+        )
+        for run_id, state in sorted(
+            states.items(), key=lambda item: targets.get(item[0], date.min)
+        ):
+            print(f"  run {targets.get(run_id)} ({run_id}): {state}")
+        return 1
+
     pause(args.project, args.service)
     if ok:
-        print(f"done: {len(new_runs)} runs success", flush=True)
+        print(f"done: {len(targets)} runs success", flush=True)
         return 0
-    report_failures(args.project, args.service, states, new_runs)
+    report_failures(args.project, args.service, states, targets)
     print(
-        f"failed: not every run finished successfully within {args.timeout_minutes} minutes",
-        flush=True,
+        f"failed: {sum(state == 'failed' for state in states.values())} run(s) failed", flush=True
     )
     return 1
 

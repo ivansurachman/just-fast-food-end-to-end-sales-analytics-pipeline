@@ -17,7 +17,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["pipelines", "dags"]
+files = ["pipelines", "dags", "tools", "dashboards"]
 disallow_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true

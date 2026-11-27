@@ -40,7 +40,8 @@ matters; the two wrong orders fail silently.
 
 ```
 # 1. the generator writes the day into the raw bucket, manifest last.
-#    `-p <name>` belongs here too if the stack was started with one.
+#    `-p <name>` belongs here too if the stack was started with one (`--project <name>` for
+#    tools/run_backfill.py).
 podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
     --date 2026-11-18 --scale 0.1 --out s3://jff-raw --s3-endpoint http://seaweedfs:8333
 
