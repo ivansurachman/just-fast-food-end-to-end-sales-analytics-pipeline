@@ -45,19 +45,18 @@ def test_mart_table_check_raises_on_a_failed_query() -> None:
         setup.mart_table_exists(client, 2)
 
 
-def test_verify_card_accepts_a_completed_query() -> None:
-    client = FakeMetabase(
-        {("POST", "/card/7/query"): {"status": "completed", "data": {"rows": []}}}
-    )
+def test_verify_card_counts_the_rows() -> None:
+    answer = {"status": "completed", "data": {"rows": [[1], [2], [3]]}}
+    client = FakeMetabase({("POST", "/card/7/query"): answer})
 
-    assert setup.verify_card(client, "Net sales per day", 7) is None
+    assert setup.verify_card(client, "Net sales per day", 7) == (3, None)
 
 
 def test_verify_card_returns_the_error_text() -> None:
     answer = {"status": "failed", "error": "relation mart_sales_day_branch_channel does not exist"}
     client = FakeMetabase({("POST", "/card/7/query"): answer})
 
-    assert setup.verify_card(client, "Net sales per day", 7) == answer["error"]
+    assert setup.verify_card(client, "Net sales per day", 7) == (0, answer["error"])
 
 
 def test_verify_card_turns_an_http_error_into_text() -> None:
@@ -67,14 +66,16 @@ def test_verify_card_turns_an_http_error_into_text() -> None:
         ) -> tuple[int, object]:
             raise RuntimeError("POST /card/7/query -> 400: bad query")
 
-    assert "400" in str(setup.verify_card(Broken({}), "Net sales per day", 7))
+    rows, error = setup.verify_card(Broken({}), "Net sales per day", 7)
+
+    assert rows == 0
+    assert error is not None and "400" in error
 
 
-def test_setup_pages_names_the_card_that_fails() -> None:
-    failing = ("POST", "/card/2/query")
+def test_setup_pages_reports_what_was_checked_and_what_failed() -> None:
     answers: dict[tuple[str, str], object] = {
-        ("POST", "/card/1/query"): {"status": "completed", "data": {"rows": []}},
-        failing: {"status": "failed", "error": "boom"},
+        ("POST", "/card/1/query"): {"status": "completed", "data": {"rows": [[1], [2]]}},
+        ("POST", "/card/2/query"): {"status": "failed", "error": "boom"},
         ("PUT", "/dashboard/99"): {},
     }
 
@@ -85,10 +86,12 @@ def test_setup_pages_names_the_card_that_fails() -> None:
         def ensure_dashboard(self, page: setup.PageSpec) -> dict[str, object]:
             return {"id": 99}
 
-    pages, problems = setup.setup_pages(Client(answers), 2)
+    pages, report = setup.setup_pages(Client(answers), 2)
 
-    assert [name for name, _error in problems] == ["Completed orders"]
-    assert problems[0][1] == "boom"
+    assert report.checked == sum(len(page.cards) for page in setup.PAGES)
+    assert report.with_rows == report.checked - 1
+    assert [name for name, _error in report.problems] == ["Completed orders"]
+    assert report.problems[0][1] == "boom"
     assert pages[0][1] == 99
 
 

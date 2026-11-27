@@ -61,6 +61,10 @@ Prerequisites: Podman with a WSL2 machine, a `python` on PATH (the host has 3.15
 use 3.12), and about 6 GB of free memory for the stack. `podman machine list` can report 2 GiB of memory
 while the VM really has about 7.6 GiB; `podman machine ssh free -m` shows the actual total (about 7.8 GB).
 
+`compose.yaml` sets `name: jff`, so the default compose project is `jff` and the containers are
+`jff_<service>_1`. A second clone, or a test stack, needs its own project name: pass `-p <name>` to every
+`podman compose` command and `--project <name>` to `tools/run_backfill.py`.
+
 ```
 git clone https://github.com/ivansurachman/just-fast-food-end-to-end-sales-analytics-pipeline.git
 cd just-fast-food-end-to-end-sales-analytics-pipeline
@@ -92,13 +96,23 @@ podman compose exec -T airflow-scheduler /opt/venvs/jff/bin/jff-gen generate \
 #    left unpaused and the script says so.
 python tools/run_backfill.py --from-date 2026-10-01 --to-date 2026-10-07
 
-# 5. Dashboards. setup.py stops with "run the backfill first" when the marts are empty, and runs every
-#    card after creating it.
+# 5. Dashboards. setup.py stops with "run the backfill first" when the marts are empty, runs every card
+#    after creating it, names each card that errors (and exits non-zero), and ends with a summary line:
+#    "<N> cards checked, <M> returned rows, <K> failed".
 python dashboards/setup.py
 ```
 
 Then open `http://localhost:3000` (Metabase, the admin from `.env`), `http://localhost:8080` (Airflow) and
 `http://127.0.0.1:8888/buckets/` (the SeaweedFS file browser).
+
+`airflow-scheduler` and `airflow-dag-processor` have no healthcheck: they show `Up` and never `(healthy)`.
+Their health is `Up` plus a DAG run that advances.
+
+The quick start leaves the DAG paused. Run a new day with `tools/run_backfill.py` or the procedure in
+`docs/demo-script.md`. Do not leave the DAG unpaused with `catchup=True`: with the dataset ending on
+2026-10-07 and `end_date` 2026-11-17, the scheduler creates a run for the next date that has no data, its
+`wait_manifest` waits for the manifest until the two-hour timeout, and `max_active_runs=1` blocks every
+later run behind it.
 
 The seven-day quick start exercises the flow, not the capacity: it proves that a day turns into rows on a
 dashboard. The capacity numbers — backfill durations, memory per container, row counts — are in

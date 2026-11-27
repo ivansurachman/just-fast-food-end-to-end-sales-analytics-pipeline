@@ -318,6 +318,30 @@ One limit of the LF guard: the test now writes its `.env.example` with CRLF byte
 on Linux CI as well, but the real failure the tester hit (an editor or `Set-Content -NoNewline` joining
 the lines) can only be reproduced on Windows; that part is documented in the README, not tested.
 
+## README re-test follow-up (2026-11-27)
+
+The re-test in `C:\dev\jff-readme-test-report.md` (section 5) found **no blockers**: the six steps ran
+with nothing beyond `-p jff-readme`, and left three non-blocking notes. Four changes close them.
+
+| Note | Change |
+|---|---|
+| #1 the README never says `compose.yaml` sets `name: jff` | a sentence now states the default project is `jff` and the containers are `jff_<service>_1`; a second clone or a test stack needs `-p <name>` on every `podman compose` command and `--project <name>` for `tools/run_backfill.py` |
+| #2 a catchup run for 2026-10-08 stays `up_for_reschedule` and blocks the runs after it | a sentence now says the quick start leaves the DAG paused, a new day goes through `tools/run_backfill.py` or `docs/demo-script.md`, and unpausing with `catchup=True` creates a run for a day with no data whose `wait_manifest` waits up to two hours while `max_active_runs=1` blocks everything behind it |
+| #3 `airflow dags pause` / `unpause` print the status from before the change | already documented in the previous round; no change |
+| the scheduler and dag-processor never show `(healthy)` | a sentence now says they have no healthcheck; their health is `Up` plus a DAG run that advances |
+| `setup.py` should say what it did | it now ends with `"<N> cards checked, <M> returned rows, <K> failed"` and still exits 1 when a card errored |
+
+`verify_card` returns `(row count, error)` and `setup_pages` returns a `CardReport` (checked, with rows,
+problems), which the tests assert. The live run on the restarted stack ended with:
+
+```
+17 cards checked, 17 returned rows, 0 failed
+```
+
+No measured number changed in this round.
+
+Not verified: the re-test after these fixes; Ivan runs it.
+
 ## Numbers and their sources
 
 Every number in the README and in the conclusion points at one of: `docs/pipeline-design.md` section 14

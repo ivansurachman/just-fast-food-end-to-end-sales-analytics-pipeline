@@ -26,7 +26,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
@@ -286,36 +286,49 @@ def mart_table_exists(client: Metabase, database_id: int) -> bool:
     return bool(rows and rows[0] and rows[0][0])
 
 
-def verify_card(client: Metabase, name: str, card_id: int) -> str | None:
-    """Run one card's query; return the error text, or None when it completes."""
+@dataclass
+class CardReport:
+    """What the card run produced: how many were checked, returned rows, or failed."""
+
+    checked: int = 0
+    with_rows: int = 0
+    problems: list[tuple[str, str]] = field(default_factory=list)
+
+
+def verify_card(client: Metabase, name: str, card_id: int) -> tuple[int, str | None]:
+    """Run one card's query; return (row count, error)."""
     try:
         _, result = client.request("POST", f"/card/{card_id}/query")
     except RuntimeError as error:
-        return str(error)
+        return 0, str(error)
     status = result.get("status")
     if status != "completed":
-        return str(result.get("error") or status)
-    return None
+        return 0, str(result.get("error") or status)
+    rows = (result.get("data") or {}).get("rows") or []
+    return len(rows), None
 
 
 def setup_pages(
     client: Metabase, database_id: int
-) -> tuple[list[tuple[str, int, int]], list[tuple[str, str]]]:
+) -> tuple[list[tuple[str, int, int]], CardReport]:
     """Create or update every page and run every card.
 
-    Returns (page name, dashboard id, card count) per page and the (card name, error) pairs of cards
-    whose query does not run.
+    Returns (page name, dashboard id, card count) per page and the card report: how many cards were
+    checked and returned rows, and the (card name, error) pairs of the ones that failed.
     """
     pages: list[tuple[str, int, int]] = []
-    problems: list[tuple[str, str]] = []
+    report = CardReport()
     for page in PAGES:
         card_ids: list[int] = []
         for card in page.cards:
             card_id = client.ensure_card(card.name, card_definition(page, card, database_id))
             card_ids.append(card_id)
-            error = verify_card(client, card.name, card_id)
+            rows, error = verify_card(client, card.name, card_id)
+            report.checked += 1
             if error:
-                problems.append((card.name, error))
+                report.problems.append((card.name, error))
+            elif rows:
+                report.with_rows += 1
         dashboard = client.ensure_dashboard(page)
         dashcards = [
             {
@@ -333,7 +346,7 @@ def setup_pages(
         client.request("PUT", f"/dashboard/{dashboard['id']}", {"dashcards": dashcards})
         LOG.info("dashboard %s (id %s) has %d cards", page.name, dashboard["id"], len(dashcards))
         pages.append((page.name, int(dashboard["id"]), len(dashcards)))
-    return pages, problems
+    return pages, report
 
 
 def main(dry_run: bool) -> int:
@@ -382,15 +395,16 @@ def main(dry_run: bool) -> int:
         )
         return 1
 
-    pages, problems = setup_pages(client, database_id)
+    pages, report = setup_pages(client, database_id)
     for name, dashboard_id, cards in pages:
         print(f"{name}: {BASE_URL}/dashboard/{dashboard_id} ({cards} cards)")
-    for name, error in problems:
+    for name, error in report.problems:
         print(f"card {name} failed: {error}")
-    if problems:
-        print(f"{len(problems)} card(s) returned an error; the dashboards are incomplete")
-        return 1
-    return 0
+    print(
+        f"{report.checked} cards checked, {report.with_rows} returned rows, "
+        f"{len(report.problems)} failed"
+    )
+    return 1 if report.problems else 0
 
 
 if __name__ == "__main__":
