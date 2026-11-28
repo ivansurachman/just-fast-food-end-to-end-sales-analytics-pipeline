@@ -361,7 +361,7 @@ Comparison before the change, column by column, against
 |---|---|---|
 | `fact_order` | 19 | same 19 |
 | `fact_order_item` | 11 | same 11 |
-| `dim_date` | 9 | same 9 |
+| `dim_date` | 8 | same 8 |
 | `dim_branch` | 9 | same 9 |
 | `dim_channel` | 5 | same 5 |
 | `dim_promo` | 8 + the `NONE` member | same |

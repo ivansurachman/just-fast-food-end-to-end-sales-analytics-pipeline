@@ -12,7 +12,7 @@ PostgreSQL holds for Metabase. Panel B repeats `dim_date` and `dim_branch` only 
 crossing; they are the same tables as in panel A. Source: `er_diagram.dot`, rendered with graphviz
 `neato -n2` (the exact command is in `docs/verification/T08-docs.md`).
 
-## Layers (provisional)
+## Layers
 
 | Layer | Content | Format and partitioning |
 |---|---|---|
