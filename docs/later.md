@@ -9,3 +9,6 @@ dynamic affected-date detection, Postgres table partitioning.
 The dashboard cards also hardcode `order_date >= date '2026-10-01'`. A Metabase date filter (a native
 variable with a default of the first day in the marts) replaces that when the pages are rebuilt, so a
 different dataset is a dropdown, not an empty chart.
+
+`docs/er_diagram.dot` is maintained by hand. Generating it from the dbt manifest (tables, columns, keys)
+would make it impossible to drift, and would say so when a model changes without the diagram.

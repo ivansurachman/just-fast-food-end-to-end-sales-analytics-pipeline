@@ -1,10 +1,16 @@
 # Data model (Check Point 1)
 
-Status: design for Mentoring 1. Layer details are provisional until the Phase 3 pipeline design is approved.
+Status: **as built, updated 28 Nov 2026**. The gold star schema and the five marts in the diagram are the
+tables the pipeline creates; `fact_dq_daily` is drawn greyed out because M18 is deferred and the table
+does not exist. It began as the Mentoring 1 design; the layer details were settled in the Phase 3
+pipeline design.
 
-![Gold star schema](er_diagram.png)
+![Gold star schema and marts](er_diagram.png)
 
-Panel B repeats `dim_date` and `dim_branch` only to keep the lines from crossing. They are the same tables as in panel A. Source: `er_diagram.dot`, rendered with `neato -n2 -Tpng`.
+Panel A is the order star, panel B the branch-day fact and the planned DQ fact, panel C the five marts
+PostgreSQL holds for Metabase. Panel B repeats `dim_date` and `dim_branch` only to keep the lines from
+crossing; they are the same tables as in panel A. Source: `er_diagram.dot`, rendered with graphviz
+`neato -n2` (the exact command is in `docs/verification/T08-docs.md`).
 
 ## Layers (provisional)
 

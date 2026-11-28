@@ -1,13 +1,19 @@
-// Gold star schema. Fixed layout (render with: neato -n2 -Tpng er_diagram.dot -o er_diagram.png).
-// Panel A: order facts with their dimensions. Panel B: coverage and data-quality facts.
+// Gold star schema and the mart layer, as built.
+// Fixed layout: every node carries pos, so render with `neato -n2` (no layout pass):
+//   podman run --rm -v "$(pwd)/docs:/w" docker.io/library/alpine:3.24.3 sh -c \
+//     "apk add --no-cache graphviz >/dev/null && neato -n2 -Tpng /w/er_diagram.dot -o /w/er_diagram.png \
+//      && neato -n2 -Tsvg /w/er_diagram.dot -o /w/er_diagram.svg"
+// Panel A: order facts with their dimensions. Panel B: coverage and the planned DQ fact.
+// Panel C: the five marts PostgreSQL holds for Metabase.
 // Notation: a bar marks the "one" side, a crow's foot marks the "many" side.
 digraph gold {
   splines=line; outputorder=edgesfirst; dpi=150;
   node [shape=plain, fontname="Helvetica", fontsize=10];
   edge [dir=both, arrowtail=tee, arrowhead=crow, color="#5b6b7a", penwidth=1.3, arrowsize=0.8];
 
-  titleA [label=<<B>A. Order star schema</B>>, fontsize=14, pos="-20,640!"];
-  titleB [label=<<B>B. Branch coverage and data-quality facts</B>>, fontsize=14, pos="-20,-70!"];
+  titleA [label=<<B>A. Order star schema (gold, DuckDB)</B>>, fontsize=14, pos="-20,640!"];
+  titleB [label=<<B>B. Branch coverage and the planned DQ fact</B>>, fontsize=14, pos="-20,-70!"];
+  titleC [label=<<B>C. Marts (PostgreSQL analytics, read by Metabase)</B>>, fontsize=14, pos="-20,-500!"];
 
   fact_order [pos="250,330!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff4e0">
     <TR><TD BGCOLOR="#f0a030" COLSPAN="2"><B>fact_order</B> (grain: order)</TD></TR>
@@ -88,12 +94,60 @@ digraph gold {
     <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">branch_key</TD></TR>
   </TABLE>>];
 
-  fact_dq_daily [pos="515,-360!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#fff4e0">
-    <TR><TD BGCOLOR="#f0a030" COLSPAN="2"><B>fact_dq_daily</B> (grain: file day x entity x defect)</TD></TR>
+  fact_dq_daily [pos="515,-360!", style="rounded,dashed", label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eeeeee">
+    <TR><TD COLSPAN="2"><B>fact_dq_daily</B> <I>(planned, not built: M18 deferred)</I></TD></TR>
     <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">file_date, entity, defect_type</TD></TR>
     <TR><TD></TD><TD ALIGN="LEFT">rows_in, rows_flagged, rows_quarantined</TD></TR>
-    <TR><TD COLSPAN="2" ALIGN="LEFT"><I>standalone, no foreign keys</I></TD></TR>
+    <TR><TD COLSPAN="2" ALIGN="LEFT"><I>would be standalone, no foreign keys</I></TD></TR>
   </TABLE>>];
+
+  // Panel C: the marts. They are aggregates, so they carry no foreign keys to gold; the grain and
+  // the primary key are what a reader needs.
+  mart_sales [pos="10,-640!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eaf6ea">
+    <TR><TD COLSPAN="2" BGCOLOR="#6aa84f"><B>mart_sales_day_branch_channel</B></TD></TR>
+    <TR><TD COLSPAN="2"><I>grain: date x branch x channel</I></TD></TR>
+    <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">order_date, branch_key, channel_key</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">total_orders, completed_orders</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">cancelled_orders, refunded_orders</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">gross_amount, discount_amount</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">net_amount, cogs_amount</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">commission_amount</TD></TR>
+  </TABLE>>];
+
+  mart_hourly [pos="380,-640!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eaf6ea">
+    <TR><TD COLSPAN="2" BGCOLOR="#6aa84f"><B>mart_hourly</B></TD></TR>
+    <TR><TD COLSPAN="2"><I>grain: date x branch x hour</I></TD></TR>
+    <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">order_date, branch_key, hour_local</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">total_orders</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">completed_orders</TD></TR>
+  </TABLE>>];
+
+  mart_item [pos="750,-640!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eaf6ea">
+    <TR><TD COLSPAN="2" BGCOLOR="#6aa84f"><B>mart_item_day</B></TD></TR>
+    <TR><TD COLSPAN="2"><I>grain: date x menu item</I></TD></TR>
+    <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">order_date, menu_item_key</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">quantity, line_amount</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">line_cogs</TD></TR>
+  </TABLE>>];
+
+  mart_promo [pos="1120,-640!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eaf6ea">
+    <TR><TD COLSPAN="2" BGCOLOR="#6aa84f"><B>mart_promo_day</B></TD></TR>
+    <TR><TD COLSPAN="2"><I>grain: date x promo x channel</I></TD></TR>
+    <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">order_date, promo_key, channel_key</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">order_count, gross_amount</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">discount_amount, net_amount</TD></TR>
+  </TABLE>>];
+
+  mart_coverage [pos="1490,-640!", label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#eaf6ea">
+    <TR><TD COLSPAN="2" BGCOLOR="#6aa84f"><B>mart_branch_coverage</B></TD></TR>
+    <TR><TD COLSPAN="2"><I>grain: date x branch</I></TD></TR>
+    <TR><TD ALIGN="LEFT"><B>PK</B></TD><TD ALIGN="LEFT">order_date, branch_key</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">is_expected, orders_received</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">late_arrival_orders, completed_orders</TD></TR>
+    <TR><TD></TD><TD ALIGN="LEFT">net_amount</TD></TR>
+  </TABLE>>];
+
+  noteC [pos="750,-800!", shape=plain, label=<<TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2"><TR><TD><I>Aggregated from fact_order, fact_order_item and fact_branch_day by load_marts (DELETE window + COPY, one transaction per table).<BR/>Metabase reads them as the read-only role analytics_ro; each has an index on order_date.</I></TD></TR></TABLE>>];
 
   // Panel A
   dim_date:sw -> fact_order:n;

@@ -347,6 +347,53 @@ No measured number changed in this round.
 
 Not verified: the re-test after these fixes; Ivan runs it.
 
+## ER diagram brought to as-built (2026-11-28)
+
+Ivan asked whether `docs/er_diagram.*` matches the project. It did not: it had been drawn in T03 from the
+design, so it showed `fact_dq_daily` (never built, M18 deferred) and lacked the five marts (built in
+T06, and the tables Metabase actually reads). Option A was chosen.
+
+Comparison before the change, column by column, against
+`dbt/target/compiled/jff/models/gold/*.sql` (the compiled models, so the SQL is what dbt ran) and
+`pipelines/sql/marts.sql`:
+
+| Table | Columns in the model | In the diagram before |
+|---|---|---|
+| `fact_order` | 19 | same 19 |
+| `fact_order_item` | 11 | same 11 |
+| `dim_date` | 9 | same 9 |
+| `dim_branch` | 9 | same 9 |
+| `dim_channel` | 5 | same 5 |
+| `dim_promo` | 8 + the `NONE` member | same |
+| `dim_menu_item` | 6 + the `UNKNOWN` member | same |
+| `fact_branch_day` | 5 | same 5 |
+| the five marts | see `pipelines/sql/marts.sql` | **missing** |
+| `fact_dq_daily` | does not exist | **drawn as a full table** |
+
+Changes:
+
+- `fact_dq_daily` is now grey, dashed and labelled "planned, not built: M18 deferred".
+- Panel C adds the five marts with their grain, primary key and columns, plus a note that they are
+  aggregates with no foreign keys and that Metabase reads them as `analytics_ro`.
+- `docs/data-model.md` says the diagram is as built and covers panels A–C, and no longer calls itself a
+  provisional design.
+- The `.dot` header carries the render command, so the next person does not have to guess it.
+
+Rendered with the same tooling as the architecture diagram:
+
+```
+podman run --rm -v "<repo>/docs:/w" docker.io/library/alpine:3.24.3 sh -c \
+  "apk add --no-cache graphviz >/dev/null && neato -n2 -Tpng /w/er_diagram.dot -o /w/er_diagram.png \
+   && neato -n2 -Tsvg /w/er_diagram.dot -o /w/er_diagram.svg"
+
+er_diagram.png  511 KB, 3752 x 3065 px
+er_diagram.svg   30 KB
+```
+
+Not verified: nothing checks the diagram automatically against the models; the comparison above was done
+by hand this once. A stale diagram is a risk for the next change, and a note in `docs/later.md` would be
+the honest place to park a generated-from-dbt version.
+
 ## Numbers and their sources
 
 Every number in the README and in the conclusion points at one of: `docs/pipeline-design.md` section 14
